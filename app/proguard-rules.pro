@@ -1,4 +1,7 @@
 # Add project specific ProGuard rules here.
+-keep class com.example.data.model.** { *; }
+-keep class com.example.domain.FullBackupData { *; }
+-keepattributes Signature,InnerClasses,EnclosingMethod,RuntimeVisibleAnnotations,AnnotationDefault
 # You can control the set of applied configuration files using the
 # proguardFiles setting in build.gradle.
 #

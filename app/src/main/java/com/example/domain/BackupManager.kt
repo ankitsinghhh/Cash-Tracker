@@ -1,5 +1,7 @@
 package com.example.domain
 
+import androidx.room.withTransaction
+import kotlinx.coroutines.CancellationException
 import com.example.data.local.AppDatabase
 import com.example.data.model.*
 import com.squareup.moshi.Moshi
@@ -39,10 +41,12 @@ object BackupManager {
         .build()
 
     private val jsonAdapter = moshi.adapter(FullBackupData::class.java).indent("  ")
-    private val standardDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-    private val realbyteExportDateFormat = SimpleDateFormat("MM/dd/yyyy HH:mm:ss", Locale.US)
+    private val standardFormats = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US) }
+    private val standardDateFormat get() = standardFormats.get()!!
+    private val exportFormats = ThreadLocal.withInitial { SimpleDateFormat("MM/dd/yyyy HH:mm:ss", Locale.US) }
+    private val realbyteExportDateFormat get() = exportFormats.get()!!
 
-    suspend fun createJsonBackup(database: AppDatabase): String {
+    suspend fun createJsonBackup(database: AppDatabase): String = database.withTransaction {
         val accounts = database.accountDao().getAllAccounts().first()
         val categories = database.categoryDao().getAllCategories().first()
         val transactions = database.transactionDao().getAllTransactions().first()
@@ -62,23 +66,47 @@ object BackupManager {
             memos = memos,
             bookmarks = bookmarks
         )
-        return jsonAdapter.toJson(backupObj)
+        jsonAdapter.toJson(backupObj)
     }
 
     suspend fun restoreJsonBackup(database: AppDatabase, jsonString: String): Boolean {
         return try {
             val backup = jsonAdapter.fromJson(jsonString) ?: return false
-            DemoDataGenerator.clearAllData(database)
-
-            database.accountDao().insertAll(backup.accounts)
-            database.categoryDao().insertAll(backup.categories)
-            database.transactionDao().insertAll(backup.transactions)
-            database.budgetDao().insertAll(backup.budgets)
-            for (r in backup.recurring) database.recurringDao().insert(r)
-            for (i in backup.installments) database.installmentDao().insert(i)
-            for (m in backup.memos) database.memoDao().insert(m)
-            for (b in backup.bookmarks) database.bookmarkDao().insert(b)
+            require(backup.version == 1) { "Unsupported backup version" }
+            val accountIds = backup.accounts.map { it.id }.toSet()
+            val categoryIds = backup.categories.map { it.id }.toSet()
+            require(accountIds.size == backup.accounts.size && categoryIds.size == backup.categories.size)
+            require(accountIds.all { it > 0 } && categoryIds.all { it > 0 }) { "Invalid backup IDs" }
+            require(backup.categories.all { it.parentId == null || it.parentId in categoryIds }) { "Invalid category hierarchy" }
+            require(backup.transactions.map { it.id }.distinct().size == backup.transactions.size)
+            val occurrenceKeys = backup.transactions.mapNotNull { it.occurrenceKey }
+            require(occurrenceKeys.distinct().size == occurrenceKeys.size) { "Duplicate scheduled occurrences in backup" }
+            require(backup.transactions.all { tx -> tx.id > 0 && tx.amount > 0 && tx.transferFee >= 0 &&
+                tx.accountId in accountIds && (tx.toAccountId == null || tx.toAccountId in accountIds) &&
+                (tx.type == TransactionType.TRANSFER || tx.categoryId in categoryIds) }) { "Invalid backup references" }
+            require(backup.budgets.all { it.amount >= 0 && (it.categoryId == 0L || it.categoryId in categoryIds) }) { "Invalid budget" }
+            require(backup.recurring.all { it.amount > 0 && it.accountId in accountIds &&
+                (it.toAccountId == null || it.toAccountId in accountIds) &&
+                (it.type == TransactionType.TRANSFER || it.categoryId in categoryIds) }) { "Invalid recurring rule" }
+            require(backup.installments.all { it.monthlyAmount > 0 && it.totalInstallments > 0 &&
+                it.paidInstallments in 0..it.totalInstallments && it.accountId in accountIds && it.categoryId in categoryIds }) { "Invalid installment plan" }
+            require(backup.bookmarks.all { it.amount >= 0 && it.accountId in accountIds &&
+                (it.toAccountId == null || it.toAccountId in accountIds) &&
+                (it.type == TransactionType.TRANSFER || it.categoryId in categoryIds) }) { "Invalid bookmark" }
+            database.withTransaction {
+                DemoDataGenerator.clearAllData(database)
+                database.accountDao().insertAll(backup.accounts)
+                database.categoryDao().insertAll(backup.categories)
+                backup.transactions.chunked(500).forEach { database.transactionDao().insertAll(it) }
+                database.budgetDao().insertAll(backup.budgets)
+                database.recurringDao().insertAll(backup.recurring)
+                database.installmentDao().insertAll(backup.installments)
+                database.memoDao().insertAll(backup.memos)
+                database.bookmarkDao().insertAll(backup.bookmarks)
+            }
             true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             e.printStackTrace()
             false
@@ -110,7 +138,7 @@ object BackupManager {
         for (item in transactions) {
             val tx = item.transaction
             val dateStr = realbyteExportDateFormat.format(Date(tx.dateMillis))
-            val amountDecimal = String.format(Locale.US, "%.1f", tx.amount / 100.0)
+            val amountDecimal = CurrencyFormatter.toDecimalString(tx.amount)
             val amountInt = (tx.amount / 100).toString()
             val accName = item.account?.name?.replace("\"", "\"\"") ?: "Cash"
             val toAccName = item.toAccount?.name?.replace("\"", "\"\"") ?: accName
@@ -174,17 +202,26 @@ object BackupManager {
     /**
      * Universal Smart Importer supporting Realbyte Money Manager, Excel, and Custom CSV formats
      */
-    suspend fun importTransactionsUniversal(
+    suspend fun importTransactionsUniversal(database: AppDatabase, csvContent: String, defaultCurrency: String = "INR"): ImportResult = try {
+        require(csvContent.length <= 32 * 1024 * 1024) { "Import is too large; split the file" }
+        database.withTransaction { importValidated(database, csvContent, defaultCurrency) }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        ImportResult(false, 0, message = error.message ?: "Import failed. No data was changed.")
+    }
+
+    private suspend fun importValidated(
         database: AppDatabase,
         csvContent: String,
         defaultCurrency: String = "INR"
     ): ImportResult {
-        val rawLines = parseCsvRows(csvContent)
-        if (rawLines.isEmpty()) {
+        val rawLines = parseCsvRows(csvContent).iterator()
+        if (!rawLines.hasNext()) {
             return ImportResult(success = false, totalImported = 0, message = "CSV file is empty.")
         }
 
-        val headerTokens = rawLines[0].map { it.trim().lowercase().replace("\"", "").replace(".", "") }
+        val headerTokens = rawLines.next().map { it.trim().removePrefix("\uFEFF").lowercase().replace("\"", "").replace(".", "") }
 
         // Find column indices
         var dateCol = -1
@@ -215,17 +252,10 @@ object BackupManager {
             }
         }
 
-        // Positional defaults for Realbyte standard export
-        if (dateCol == -1) dateCol = 0
-        if (accCol == -1 && headerTokens.size > 1) accCol = 1
-        if (catCol == -1 && headerTokens.size > 2) catCol = 2
-        if (subCatCol == -1 && headerTokens.size > 3) subCatCol = 3
-        if (noteCol == -1 && headerTokens.size > 4) noteCol = 4
+        // Missing optional named columns stay absent; positional guesses can turn
+        // an Amount column into a subcategory or a Type column into a note.
         if (amtCol == -1 && currencyAmtCol != -1) amtCol = currencyAmtCol
-        if (amtCol == -1 && headerTokens.size > 8) amtCol = 8
-        if (amtCol == -1 && headerTokens.size > 5) amtCol = 5
-        if (typeCol == -1 && headerTokens.size > 6) typeCol = 6
-        if (descCol == -1 && headerTokens.size > 7) descCol = 7
+        require(dateCol != -1 && amtCol != -1) { "CSV needs named Date and Amount columns" }
 
         val existingAccounts = database.accountDao().getAllAccounts().first().toMutableList()
         val existingCategories = database.categoryDao().getAllCategories().first().toMutableList()
@@ -255,10 +285,13 @@ object BackupManager {
             SimpleDateFormat("dd-MM-yyyy", Locale.US),
             SimpleDateFormat("MM-dd-yyyy HH:mm:ss", Locale.US),
             SimpleDateFormat("MM-dd-yyyy", Locale.US)
-        )
+        ).onEach { it.isLenient = false }
 
-        for (i in 1 until rawLines.size) {
-            val tokens = rawLines[i]
+        var importedCount = 0
+        var i = 0
+        while (rawLines.hasNext()) {
+            i++
+            val tokens = rawLines.next()
             if (tokens.isEmpty() || tokens.all { it.isBlank() }) continue
 
             try {
@@ -297,15 +330,16 @@ object BackupManager {
                 var parsedMillis = 0L
                 for (df in knownDateFormats) {
                     try {
-                        val d = df.parse(dateRaw)
-                        if (d != null) {
+                        val position = java.text.ParsePosition(0)
+                        val d = df.parse(dateRaw, position)
+                        if (d != null && position.index == dateRaw.length) {
                             parsedMillis = d.time
                             break
                         }
                     } catch (_: Exception) {}
                 }
                 if (parsedMillis == 0L) {
-                    parsedMillis = dateRaw.toLongOrNull() ?: System.currentTimeMillis()
+                    parsedMillis = dateRaw.toLongOrNull() ?: error("Invalid date on CSV row ${i + 1}")
                 }
 
                 // Determine Transaction Type
@@ -369,9 +403,9 @@ object BackupManager {
 
                 // Auto-resolve or create Category
                 var category = existingCategories.firstOrNull {
-                    it.name.equals(catName, ignoreCase = true) ||
+                    it.type == type && it.parentId == null && (it.name.equals(catName, ignoreCase = true) ||
                     it.name.contains(catName, ignoreCase = true) ||
-                    catName.contains(it.name, ignoreCase = true)
+                    catName.contains(it.name, ignoreCase = true))
                 }
                 if (category == null && type != TransactionType.TRANSFER) {
                     // Extract icon & color from category name
@@ -422,32 +456,38 @@ object BackupManager {
 
                 if (type == TransactionType.EXPENSE) totalExpense += amountMinor
                 if (type == TransactionType.INCOME) totalIncome += amountMinor
+                importedCount++
+                if (txList.size >= 500) {
+                    database.transactionDao().insertAll(txList)
+                    txList.clear()
+                }
 
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                e.printStackTrace()
+                throw IllegalArgumentException("Could not import CSV row ${i + 1}: ${e.message ?: "invalid data"}", e)
             }
         }
 
         if (txList.isNotEmpty()) {
-            database.transactionDao().insertAll(txList)
+            txList.chunked(500).forEach { database.transactionDao().insertAll(it) }
         }
 
         return ImportResult(
-            success = txList.isNotEmpty(),
-            totalImported = txList.size,
+            success = importedCount > 0,
+            totalImported = importedCount,
             accountsCreated = newAccountsCreated.distinct(),
             categoriesCreated = newCategoriesCreated.distinct(),
             totalExpense = totalExpense,
             totalIncome = totalIncome,
-            message = if (txList.isNotEmpty()) "Successfully imported ${txList.size} transactions!" else "No valid transaction rows found to import."
+            message = if (importedCount > 0) "Successfully imported $importedCount transactions!" else "No valid transaction rows found to import."
         )
     }
 
     /**
      * Robust CSV Parser that handles multiline quoted strings and escaped quotes
      */
-    private fun parseCsvRows(csvContent: String): List<List<String>> {
-        val rows = mutableListOf<List<String>>()
+    private fun parseCsvRows(csvContent: String): Sequence<List<String>> = sequence {
         val currentTokens = mutableListOf<String>()
         val currentCell = StringBuilder()
         var insideQuote = false
@@ -476,7 +516,7 @@ object BackupManager {
                     currentTokens.add(currentCell.toString().trim())
                     currentCell.clear()
                     if (currentTokens.isNotEmpty() && currentTokens.any { it.isNotBlank() }) {
-                        rows.add(currentTokens.toList())
+                        yield(currentTokens.toList())
                     }
                     currentTokens.clear()
                 }
@@ -487,13 +527,13 @@ object BackupManager {
             i++
         }
 
+        require(!insideQuote) { "CSV contains an unterminated quoted field" }
         if (currentCell.isNotEmpty() || currentTokens.isNotEmpty()) {
             currentTokens.add(currentCell.toString().trim())
             if (currentTokens.any { it.isNotBlank() }) {
-                rows.add(currentTokens.toList())
+                yield(currentTokens.toList())
             }
         }
 
-        return rows
     }
 }

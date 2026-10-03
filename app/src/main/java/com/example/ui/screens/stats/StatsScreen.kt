@@ -11,6 +11,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,19 +42,24 @@ fun StatsScreen(
     onNavigateToTransaction: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var selectedViewType by rememberSaveable { mutableStateOf(StatsViewType.CATEGORY_BREAKDOWN) }
+    val savedViews = rememberSaveableStateHolder()
     val currentMonth by viewModel.currentMonth.collectAsStateWithLifecycle()
     val periodSummary by viewModel.monthPeriodSummary.collectAsStateWithLifecycle()
-    val categorySpendings by viewModel.categorySpendings.collectAsStateWithLifecycle()
-    val categoryIncomes by viewModel.categoryIncomes.collectAsStateWithLifecycle()
-    val merchantStats by viewModel.merchantStats.collectAsStateWithLifecycle()
-    val monthlyGroups by viewModel.monthlyHistoricalGroups.collectAsStateWithLifecycle()
-    val dailyTrendData by viewModel.dailySpendingTrend.collectAsStateWithLifecycle()
-    val dayOfWeekHabits by viewModel.dayOfWeekDistribution.collectAsStateWithLifecycle()
-    val categoryComparisons by viewModel.monthOverMonthCategoryComparison.collectAsStateWithLifecycle()
+    val categorySpendings by (if (selectedViewType == StatsViewType.CATEGORY_BREAKDOWN) viewModel.categorySpendings else kotlinx.coroutines.flow.flowOf(emptyList<CategorySpending>())).collectAsStateWithLifecycle(emptyList<CategorySpending>())
+    val categoryIncomes by (if (selectedViewType == StatsViewType.CATEGORY_BREAKDOWN) viewModel.categoryIncomes else kotlinx.coroutines.flow.flowOf(emptyList<CategorySpending>())).collectAsStateWithLifecycle(emptyList<CategorySpending>())
+    val merchantStats by (if (selectedViewType == StatsViewType.MERCHANT_ANALYTICS) viewModel.merchantStats else kotlinx.coroutines.flow.flowOf(emptyList<MerchantStat>())).collectAsStateWithLifecycle(emptyList<MerchantStat>())
+    val monthlyGroups by (if (selectedViewType == StatsViewType.CASH_FLOW_TREND) viewModel.monthlyHistoricalGroups else kotlinx.coroutines.flow.flowOf(emptyList<MonthlyAggregation>())).collectAsStateWithLifecycle(emptyList<MonthlyAggregation>())
+    val dailyTrendData by (if (selectedViewType == StatsViewType.SPENDING_TREND) viewModel.dailySpendingTrend else kotlinx.coroutines.flow.flowOf(DailySpendingTrendData(emptyList(), emptyList(), 0L, 1, 0L, 0, 0L))).collectAsStateWithLifecycle(DailySpendingTrendData(emptyList(), emptyList(), 0L, 1, 0L, 0, 0L))
+    val dayOfWeekHabits by (if (selectedViewType == StatsViewType.PERIOD_COMPARISON) viewModel.dayOfWeekDistribution else kotlinx.coroutines.flow.flowOf(emptyList<DayOfWeekSpending>())).collectAsStateWithLifecycle(emptyList<DayOfWeekSpending>())
+    val categoryComparisons by (if (selectedViewType == StatsViewType.PERIOD_COMPARISON) viewModel.monthOverMonthCategoryComparison else kotlinx.coroutines.flow.flowOf(emptyList<CategoryComparisonItem>())).collectAsStateWithLifecycle(emptyList<CategoryComparisonItem>())
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
+    val monthData by viewModel.monthPageData.collectAsStateWithLifecycle()
+    val monthError by viewModel.homeError.collectAsStateWithLifecycle()
+    if (monthError != null) { ErrorContent(monthError!!) { viewModel.retryHome() }; return }
+    if (monthData == null) { LoadingContent(); return }
 
-    var selectedViewType by remember { mutableStateOf(StatsViewType.CATEGORY_BREAKDOWN) }
-    var selectedTransactionType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    var selectedTransactionType by rememberSaveable { mutableStateOf(TransactionType.EXPENSE) }
     var selectedDrilldownCategory by remember { mutableStateOf<CategorySpending?>(null) }
     var showMonthPicker by remember { mutableStateOf(false) }
 
@@ -126,6 +133,7 @@ fun StatsScreen(
             }
         }
     ) { innerPadding ->
+        savedViews.SaveableStateProvider("${currentMonth.get(java.util.Calendar.YEAR)}-${currentMonth.get(java.util.Calendar.MONTH)}-${selectedViewType.name}") {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -188,11 +196,14 @@ fun StatsScreen(
                         }
 
                         // Ranked Category Horizontal Bars with drilldown
-                        item {
+                        item { Text("Category Ranking", style = MaterialTheme.typography.titleMedium) }
+                        items(activeCategoryItems, key = { "rank_${it.category.id}" }, contentType = { "category" }) { category ->
                             RankedCategoryBarChart(
-                                items = activeCategoryItems,
+                                items = listOf(category.copy(subcategoryBreakdown = emptyList())),
                                 currencyCode = currencyCode,
-                                onCategorySelected = { selectedDrilldownCategory = it }
+                                maximumAmount = activeCategoryItems.maxOf { it.totalAmount },
+                                showHeader = false,
+                                onCategorySelected = { selectedDrilldownCategory = category }
                             )
                         }
 
@@ -226,27 +237,14 @@ fun StatsScreen(
                                             )
                                         }
 
-                                        if (cat.subcategoryBreakdown.isNotEmpty()) {
-                                            Spacer(modifier = Modifier.height(12.dp))
-                                            Text("Subcategories", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            cat.subcategoryBreakdown.forEach { sub ->
-                                                Row(
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .padding(vertical = 4.dp),
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    Text(sub.subcategory.name, style = MaterialTheme.typography.bodyMedium)
-                                                    Text(
-                                                        "${CurrencyFormatter.formatAmount(sub.totalAmount, currencyCode)} (${String.format("%.1f", sub.percentage)}%)",
-                                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
-                                                    )
-                                                }
-                                            }
-                                        }
+
                                     }
                                 }
+                            }
+                            items(cat.subcategoryBreakdown, key = { "sub_" + it.subcategory.id }, contentType = { "subcategory" }) { sub ->
+                                ListItem(headlineContent = { Text(sub.subcategory.name) }, supportingContent = {
+                                    Text(CurrencyFormatter.formatAmount(sub.totalAmount, currencyCode))
+                                })
                             }
                         }
                     }
@@ -470,10 +468,13 @@ fun StatsScreen(
                     }
 
                     if (categoryComparisons.isNotEmpty()) {
-                        item {
+                        item { Text("Category Shift (vs Last Month)", style = MaterialTheme.typography.titleMedium) }
+                        items(categoryComparisons, key = { "comparison_${it.category.id}" }, contentType = { "comparison" }) { comparison ->
                             MonthOverMonthCategoryBarChart(
-                                comparisons = categoryComparisons,
-                                currencyCode = currencyCode
+                                comparisons = listOf(comparison),
+                                currencyCode = currencyCode,
+                                maximumAmount = categoryComparisons.maxOf { maxOf(it.currentMonthAmount, it.previousMonthAmount) },
+                                showHeader = false
                             )
                         }
                     }
@@ -488,6 +489,7 @@ fun StatsScreen(
                     }
                 }
             }
+        }
         }
     }
 

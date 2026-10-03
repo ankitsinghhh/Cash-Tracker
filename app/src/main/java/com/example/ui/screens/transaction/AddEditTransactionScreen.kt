@@ -28,6 +28,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
+import kotlinx.coroutines.CancellationException
+import com.example.ui.components.LoadingContent
+import com.example.ui.components.ErrorContent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.*
 import com.example.domain.CurrencyFormatter
 import com.example.ui.MainViewModel
+import com.example.ui.components.EmptyStateView
 import com.example.ui.components.CalculatorKeypad
 import com.example.ui.components.CategoryIconBadge
 import com.example.ui.theme.*
@@ -75,34 +81,48 @@ fun AddEditTransactionScreen(
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
     val isKeyboardOpen = imeBottom > 0
-    val allTransactions by viewModel.allTransactionsWithDetails.collectAsStateWithLifecycle()
+    var recordRetry by remember { mutableIntStateOf(0) }
+    var recordError by remember { mutableStateOf<String?>(null) }
+    val existingRows by produceState<List<TransactionWithDetails>?>(null, transactionId, recordRetry) {
+        recordError = null
+        if (transactionId == null || transactionId == 0L) value = emptyList()
+        else try { viewModel.transaction(transactionId).collect { value = it } }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { recordError = "Could not load this transaction" }
+    }
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
 
-    val existingTx = remember(transactionId, allTransactions) {
-        if (transactionId != null && transactionId != 0L) {
-            allTransactions.find { it.transaction.id == transactionId }
-        } else null
+    if (existingRows == null) {
+        if (recordError != null) ErrorContent(recordError!!) { recordRetry++ } else LoadingContent()
+        return
+    }
+    val loadedQueries by viewModel.loadedQueries.collectAsStateWithLifecycle()
+    if ("accounts" !in loadedQueries || "categories" !in loadedQueries) { LoadingContent(); return }
+    val existingTx = existingRows?.singleOrNull()
+    if (transactionId != null && transactionId != 0L && existingTx == null) {
+        EmptyStateView("Transaction not found", "This transaction may have been deleted.")
+        return
     }
 
-    var transactionType by remember(existingTx) {
+    var transactionType by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.type ?: TransactionType.EXPENSE)
     }
 
-    var amountMinorUnits by remember(existingTx) {
+    var amountMinorUnits by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.amount ?: 0L)
     }
-    var expressionText by remember(amountMinorUnits) {
+    var expressionText by rememberSaveable(transactionId) {
         mutableStateOf(if (amountMinorUnits > 0) CurrencyFormatter.toDecimalString(amountMinorUnits) else "0")
     }
 
     // Default to AMOUNT input on launch for fast, minimal data entry
-    var activeSection by remember {
+    var activeSection by rememberSaveable(transactionId) {
         mutableStateOf(if (existingTx == null) ActiveInputSection.AMOUNT else ActiveInputSection.NONE)
     }
 
-    var selectedCalendar by remember(existingTx) {
+    var selectedCalendar by rememberSaveable(transactionId, stateSaver = Saver<Calendar, Long>(save = { it.timeInMillis }, restore = { Calendar.getInstance().apply { timeInMillis = it } })) {
         val cal = Calendar.getInstance()
         if (existingTx != null) {
             cal.timeInMillis = existingTx.transaction.dateMillis
@@ -110,15 +130,15 @@ fun AddEditTransactionScreen(
         mutableStateOf(cal)
     }
 
-    var selectedAccountId by remember(existingTx, accounts) {
+    var selectedAccountId by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.accountId ?: accounts.firstOrNull()?.id ?: 1L)
     }
 
-    var selectedToAccountId by remember(existingTx, accounts) {
+    var selectedToAccountId by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.toAccountId ?: accounts.getOrNull(1)?.id ?: accounts.firstOrNull()?.id ?: 1L)
     }
 
-    var transferFeeMinorUnits by remember(existingTx) {
+    var transferFeeMinorUnits by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.transferFee ?: 0L)
     }
 
@@ -126,43 +146,50 @@ fun AddEditTransactionScreen(
         categories.filter { it.type == transactionType && it.parentId == null }
     }
 
-    var selectedCategoryId by remember(existingTx, typeFilteredCategories) {
+    var selectedCategoryId by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.categoryId ?: typeFilteredCategories.firstOrNull()?.id ?: 1L)
     }
 
-    var selectedSubcategoryId by remember(existingTx) {
+    var selectedSubcategoryId by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.subcategoryId)
+    }
+
+    LaunchedEffect(transactionType, typeFilteredCategories) {
+        if (transactionType != TransactionType.TRANSFER && typeFilteredCategories.none { it.id == selectedCategoryId }) {
+            selectedCategoryId = typeFilteredCategories.firstOrNull()?.id ?: 0L
+            selectedSubcategoryId = null
+        }
     }
 
     val subcategories = remember(categories, selectedCategoryId) {
         categories.filter { it.parentId == selectedCategoryId }
     }
 
-    var payeeText by remember(existingTx) {
+    var payeeText by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.payee ?: "")
     }
 
-    var noteText by remember(existingTx) {
+    var noteText by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.note ?: "")
     }
 
-    var tagsText by remember(existingTx) {
+    var tagsText by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.tags ?: "")
     }
 
-    var paymentMethod by remember(existingTx) {
+    var paymentMethod by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.paymentMethod ?: PaymentMethod.CASH)
     }
 
-    var receiptUri by remember(existingTx) {
+    var receiptUri by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.receiptUri)
     }
 
-    var isExcludedFromStats by remember(existingTx) {
+    var isExcludedFromStats by rememberSaveable(transactionId) {
         mutableStateOf(existingTx?.transaction?.isExcludedFromStats ?: false)
     }
 
-    var saveAsBookmark by remember { mutableStateOf(false) }
+    var saveAsBookmark by rememberSaveable(transactionId) { mutableStateOf(false) }
     var showMoreOptions by remember { mutableStateOf(false) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
@@ -173,7 +200,7 @@ fun AddEditTransactionScreen(
         }
     }
 
-    val dateFormat = SimpleDateFormat("M/d/yy (EEE)  h:mm a", Locale.US)
+    val dateFormat = remember { SimpleDateFormat("M/d/yy (EEE)  h:mm a", Locale.US) }
 
     val currentSelectedAccount = accounts.find { it.id == selectedAccountId }
     val currentSelectedToAccount = accounts.find { it.id == selectedToAccountId }
@@ -217,7 +244,8 @@ fun AddEditTransactionScreen(
         ).show()
     }
 
-    var isSaving by remember { mutableStateOf(false) }
+    var saveError by rememberSaveable(transactionId) { mutableStateOf<String?>(null) }
+    val isSaving by viewModel.transactionSaving.collectAsStateWithLifecycle()
     var isSaveSuccess by remember { mutableStateOf(false) }
 
     fun exitScreen() {
@@ -246,10 +274,10 @@ fun AddEditTransactionScreen(
         if (amountMinorUnits <= 0L) {
             amountMinorUnits = CurrencyFormatter.parseToMinorUnits(expressionText)
         }
-        if (amountMinorUnits <= 0L) return
+        if (amountMinorUnits <= 0L) { saveError = "Enter an amount greater than zero"; return }
 
         focusManager.clearFocus()
-        isSaving = true
+        saveError = null
         viewModel.saveTransaction(
             id = existingTx?.transaction?.id ?: 0L,
             type = transactionType,
@@ -267,8 +295,8 @@ fun AddEditTransactionScreen(
             paymentMethod = paymentMethod,
             isExcludedFromStats = isExcludedFromStats,
             saveAsBookmark = saveAsBookmark,
+            onError = { message -> saveError = message },
             onComplete = {
-                isSaving = false
                 if (closeOnFinish) {
                     isSaveSuccess = true
                     exitScreen()
@@ -287,6 +315,7 @@ fun AddEditTransactionScreen(
     }
 
     Scaffold(
+        snackbarHost = { if (saveError != null) Snackbar { Text(saveError!!) } },
         modifier = modifier.fillMaxSize(),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {

@@ -1023,11 +1023,15 @@ object PCWebAssets {
 
     async function loadAllData() {
       try {
-        const res = await apiFetch('/api/data');
+        const res = await apiFetch('/api/data?limit=100');
+        if (!res.ok) throw new Error('Could not load records');
         const data = await res.json();
         appState.accounts = data.accounts || [];
         appState.categories = data.categories || [];
         appState.transactions = data.transactions || [];
+        appState.nextOffset = data.nextOffset;
+        appState.totalCount = data.totalCount;
+        updatePagingNotice();
         if (data.currencySymbol) appState.currencySymbol = data.currencySymbol;
 
         populateFilterDropdowns();
@@ -1036,6 +1040,36 @@ object PCWebAssets {
         renderAccounts();
       } catch (e) {
         console.error("Failed to load data:", e);
+        showToast("Could not load records. Refresh to retry.", "error");
+      }
+    }
+
+    function updatePagingNotice() {
+      let notice = document.getElementById('pagingNotice');
+      if (!notice) {
+        notice = document.createElement('div'); notice.id = 'pagingNotice';
+        notice.style.padding = '12px';
+        document.getElementById('tabTransactions').appendChild(notice);
+      }
+      notice.replaceChildren();
+      const text = document.createElement('span');
+      text.textContent = 'Showing ' + appState.transactions.length + ' of ' + appState.totalCount + ' records. Filtered totals describe the loaded records. ';
+      notice.appendChild(text);
+      if (appState.nextOffset != null) {
+        const button = document.createElement('button'); button.textContent = 'Load more records';
+        button.onclick = async () => {
+          button.disabled = true;
+          try {
+            const res = await apiFetch('/api/data?limit=100&offset=' + appState.nextOffset);
+            if (!res.ok) throw new Error('Could not load more records');
+            const data = await res.json();
+            const ids = new Set(appState.transactions.map(t => t.id));
+            appState.transactions.push(...(data.transactions || []).filter(t => !ids.has(t.id)));
+            appState.nextOffset = data.nextOffset; appState.totalCount = data.totalCount;
+            renderStats(); renderTransactions(); updatePagingNotice();
+          } catch (error) { button.disabled = false; button.textContent = 'Retry loading records'; }
+        };
+        notice.appendChild(button);
       }
     }
 

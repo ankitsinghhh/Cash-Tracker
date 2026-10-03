@@ -14,6 +14,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,12 +59,9 @@ fun DonutPieChart(
     onCategorySelected: (CategorySpending) -> Unit = {}
 ) {
     var selectedIndex by remember { mutableStateOf<Int?>(null) }
-    val animatedProgress = remember { Animatable(0f) }
+    val animatedProgress = remember { Animatable(1f) }
 
-    LaunchedEffect(items) {
-        animatedProgress.snapTo(0f)
-        animatedProgress.animateTo(1f, animationSpec = tween(700))
-    }
+    LaunchedEffect(items.map { it.category.id }) { animatedProgress.animateTo(1f, animationSpec = tween(200)) }
 
     val palette = remember(items) {
         items.map { CategoryIconResolver.parseColor(it.category.colorHex) }
@@ -359,14 +357,11 @@ fun DailySpendingTrendChart(
 ) {
     if (data.days.isEmpty()) return
 
-    var chartMode by remember { mutableStateOf(TrendChartMode.DAILY_BARS) }
+    var chartMode by rememberSaveable { mutableStateOf(TrendChartMode.DAILY_BARS) }
     var selectedPointIndex by remember { mutableStateOf<Int?>(null) }
-    val animatedProgress = remember { Animatable(0f) }
+    val animatedProgress = remember { Animatable(1f) }
 
-    LaunchedEffect(data, chartMode) {
-        animatedProgress.snapTo(0f)
-        animatedProgress.animateTo(1f, animationSpec = tween(650))
-    }
+    LaunchedEffect(chartMode) { animatedProgress.animateTo(1f, animationSpec = tween(200)) }
 
     val maxDailyExpense = remember(data.days) {
         val maxVal = data.days.maxOfOrNull { it.totalExpense } ?: 0L
@@ -788,12 +783,14 @@ fun RankedCategoryBarChart(
     items: List<CategorySpending>,
     currencyCode: String = "INR",
     modifier: Modifier = Modifier,
+    maximumAmount: Long? = null,
+    showHeader: Boolean = true,
     onCategorySelected: (CategorySpending) -> Unit = {}
 ) {
     if (items.isEmpty()) return
 
     var expandedCategoryId by remember { mutableStateOf<Long?>(null) }
-    val maxAmount = remember(items) { items.maxOfOrNull { it.totalAmount } ?: 1L }
+    val maxAmount = remember(items, maximumAmount) { (maximumAmount ?: items.maxOfOrNull { it.totalAmount } ?: 1L).coerceAtLeast(1L) }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -801,6 +798,7 @@ fun RankedCategoryBarChart(
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            if (showHeader) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -819,6 +817,7 @@ fun RankedCategoryBarChart(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
+            }
 
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items.forEach { item ->
@@ -937,12 +936,14 @@ fun RankedCategoryBarChart(
 fun MonthOverMonthCategoryBarChart(
     comparisons: List<CategoryComparisonItem>,
     currencyCode: String = "INR",
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    maximumAmount: Long? = null,
+    showHeader: Boolean = true
 ) {
     if (comparisons.isEmpty()) return
 
-    val maxAmount = remember(comparisons) {
-        val maxVal = comparisons.maxOfOrNull { max(it.currentMonthAmount, it.previousMonthAmount) } ?: 0L
+    val maxAmount = remember(comparisons, maximumAmount) {
+        val maxVal = maximumAmount ?: comparisons.maxOfOrNull { max(it.currentMonthAmount, it.previousMonthAmount) } ?: 0L
         if (maxVal > 0) maxVal else 1L
     }
 
@@ -952,6 +953,7 @@ fun MonthOverMonthCategoryBarChart(
         shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            if (showHeader) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -977,6 +979,7 @@ fun MonthOverMonthCategoryBarChart(
             }
 
             Spacer(modifier = Modifier.height(14.dp))
+            }
 
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 comparisons.forEach { item ->

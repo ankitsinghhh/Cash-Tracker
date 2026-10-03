@@ -23,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,6 +58,8 @@ fun HomeScreen(
     onNavigateToMemos: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val savedTabs = rememberSaveableStateHolder()
+    val loadError by viewModel.homeError.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val userName by viewModel.userName.collectAsStateWithLifecycle()
     val financialGoal by viewModel.financialGoal.collectAsStateWithLifecycle()
@@ -64,8 +67,8 @@ fun HomeScreen(
     val homeSubTab by viewModel.homeSubTab.collectAsStateWithLifecycle()
     val preparedPageData by viewModel.monthPageData.collectAsStateWithLifecycle()
     val currentTransactions = preparedPageData?.transactions.orEmpty()
-    val monthlyGroups by viewModel.monthlyHistoricalGroups.collectAsStateWithLifecycle()
-    val accountBalances by viewModel.accountBalances.collectAsStateWithLifecycle()
+    val monthlyGroups by (if (homeSubTab == HomeSubTab.MONTHLY) viewModel.monthlyHistoricalGroups else kotlinx.coroutines.flow.flowOf(emptyList<MonthlyAggregation>())).collectAsStateWithLifecycle(emptyList<MonthlyAggregation>())
+    val accountBalances by (if (homeSubTab == HomeSubTab.TOTAL_SUMMARY) viewModel.accountBalances else kotlinx.coroutines.flow.flowOf(emptyList<AccountWithBalance>())).collectAsStateWithLifecycle(emptyList<AccountWithBalance>())
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedTransactionIds.collectAsStateWithLifecycle()
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
@@ -83,7 +86,8 @@ fun HomeScreen(
             filterState.typeFilter != null ||
             filterState.accountIdFilter != null ||
             filterState.categoryIdFilter != null ||
-            filterState.onlyWithReceipt
+            filterState.onlyWithReceipt || filterState.startDateMillis != null || filterState.endDateMillis != null ||
+            filterState.payeeFilter.isNotBlank() || filterState.tagFilter.isNotBlank()
 
     val selectedTransactions = remember(selectedIds, currentTransactions) {
         currentTransactions.filter { selectedIds.contains(it.transaction.id) }
@@ -464,7 +468,7 @@ fun HomeScreen(
                     ) { pageData ->
                         if (pageData == null) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator()
+                                if (loadError != null) ErrorContent(loadError!!, viewModel::retryHome) else LoadingContent()
                             }
                             return@AnimatedContent
                         }
@@ -475,6 +479,7 @@ fun HomeScreen(
                             label = "HomeSubTabsTransition",
                             modifier = Modifier.fillMaxSize()
                         ) { targetSubTab ->
+                            savedTabs.SaveableStateProvider("${pageData.monthCal.get(Calendar.YEAR)}-${pageData.monthCal.get(Calendar.MONTH)}-${targetSubTab.name}") {
                             when (targetSubTab) {
                                 HomeSubTab.DAILY -> {
                                     DailyTabContent(
@@ -543,6 +548,7 @@ fun HomeScreen(
                                         currencyCode = currencyCode
                                     )
                                 }
+                            }
                             }
                         }
                     }
@@ -967,7 +973,7 @@ fun CalendarTabContent(
     val todayDateStr = remember { dateFormat.format(Calendar.getInstance().time) }
     
     // Default selection to today if in current month, or 1st of month
-    var selectedDateString by remember(currentMonthCal) {
+    var selectedDateString by rememberSaveable(currentMonthCal.get(Calendar.YEAR), currentMonthCal.get(Calendar.MONTH)) {
         val todayCal = Calendar.getInstance()
         val isCurrentCalThisMonth = todayCal.get(Calendar.YEAR) == currentMonthCal.get(Calendar.YEAR) &&
                 todayCal.get(Calendar.MONTH) == currentMonthCal.get(Calendar.MONTH)

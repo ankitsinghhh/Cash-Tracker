@@ -1,7 +1,11 @@
 package com.example.server
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.example.data.model.Account
+import com.example.data.model.AccountWithBalance
+import com.example.data.model.Category
+import com.example.data.model.TransactionWithDetails
 import com.example.data.model.AccountType
 import com.example.data.model.PaymentMethod
 import com.example.data.model.TransactionEntity
@@ -9,6 +13,7 @@ import com.example.data.model.TransactionType
 import com.example.data.repository.FinanceRepository
 import com.example.domain.BackupManager
 import com.example.domain.CurrencyFormatter
+import com.example.domain.FinancialEngine
 import com.example.util.NetworkUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,12 +34,23 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.Executors
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.RejectedExecutionException
+import java.net.URLDecoder
 
 object PCManagerServer {
 
+    private data class DataPage(val accounts: List<AccountWithBalance>, val categories: List<Category>,
+        val transactions: List<TransactionWithDetails>, val total: Int, val currency: String)
+
     private val serverScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val threadPool = Executors.newCachedThreadPool()
+    private val threadPool = ThreadPoolExecutor(4, 4, 60, TimeUnit.SECONDS, ArrayBlockingQueue<Runnable>(16)).apply { allowCoreThreadTimeOut(true) }
+    private const val MAX_BODY = 8 * 1024 * 1024
+    private const val MAX_HEADER_LINE = 8192
+    private const val MAX_RESPONSE = 32 * 1024 * 1024
+    private val clients = java.util.concurrent.ConcurrentHashMap.newKeySet<Socket>()
 
     @Volatile
     var isRunning: Boolean = false
@@ -147,6 +163,8 @@ object PCManagerServer {
             // ignore
         }
         serverSocket = null
+        clients.forEach { try { it.close() } catch (_: Exception) {} }
+        clients.clear()
         statusCallback?.invoke(false, ipAddress, port)
     }
 
@@ -154,9 +172,9 @@ object PCManagerServer {
         while (isRunning && !socket.isClosed) {
             try {
                 val clientSocket = socket.accept()
-                threadPool.execute {
-                    handleClient(clientSocket)
-                }
+                clients.add(clientSocket)
+                try { threadPool.execute { handleClient(clientSocket) } }
+                catch (_: RejectedExecutionException) { clients.remove(clientSocket); clientSocket.close() }
             } catch (e: SocketException) {
                 // Expected when socket is closed
                 break
@@ -182,6 +200,7 @@ object PCManagerServer {
                     if (b == -1) break
                     if (b == '\n'.code) break
                     if (b != '\r'.code) {
+                        if (lineBaos.size() >= MAX_HEADER_LINE) throw IllegalArgumentException("Header too large")
                         lineBaos.write(b)
                     }
                 }
@@ -199,9 +218,13 @@ object PCManagerServer {
 
             // Read HTTP headers
             val headers = mutableMapOf<String, String>()
+            var headerCount = 0
+            var headerBytes = 0
             while (true) {
                 val line = readHeaderLine()
                 if (line.isBlank()) break
+                headerBytes += line.length
+                require(++headerCount <= 64 && headerBytes <= 32768) { "Headers too large" }
                 val colonIdx = line.indexOf(":")
                 if (colonIdx > 0) {
                     val k = line.substring(0, colonIdx).trim().lowercase()
@@ -211,7 +234,9 @@ object PCManagerServer {
             }
 
             // Read Request Body (exact byte count from Content-Length)
-            val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
+            val contentLength = headers["content-length"]?.let { it.toIntOrNull() ?: throw IllegalArgumentException("Invalid content length") } ?: 0
+            require(contentLength in 0..MAX_BODY) { "Request body too large" }
+            require(!headers.containsKey("transfer-encoding")) { "Unsupported transfer encoding" }
             val body = if (contentLength > 0) {
                 val buf = ByteArray(contentLength)
                 var readTotal = 0
@@ -220,6 +245,7 @@ object PCManagerServer {
                     if (r == -1) break
                     readTotal += r
                 }
+                require(readTotal == contentLength) { "Incomplete request body" }
                 String(buf, 0, readTotal, StandardCharsets.UTF_8)
             } else {
                 ""
@@ -260,7 +286,7 @@ object PCManagerServer {
                 path == "/" || path == "/index.html" -> handleIndexHtml(rawOut)
                 path == "/api/status" -> handleStatus(rawOut, authenticated = true)
                 path == "/api/login" && method == "POST" -> handleLogin(body, rawOut)
-                path == "/api/data" -> handleGetData(rawOut)
+                path == "/api/data" -> handleGetData(fullPath, rawOut)
                 path == "/api/transactions" && method == "POST" -> handleCreateTransaction(body, rawOut)
                 path == "/api/transactions/update" && method == "POST" -> handleUpdateTransaction(body, rawOut)
                 path == "/api/transactions/delete" && method == "POST" -> handleDeleteTransaction(body, rawOut)
@@ -270,9 +296,13 @@ object PCManagerServer {
                 path == "/api/import/json" && method == "POST" -> handleImportJson(body, rawOut)
                 else -> sendResponse(rawOut, 404, "Not Found", "text/plain", "Not Found", extraHeaders = getCorsHeaders())
             }
+        } catch (error: IllegalArgumentException) {
+            try { sendResponse(BufferedOutputStream(client.getOutputStream()), 400, "Bad Request", "application/json",
+                JSONObject().put("error", error.message ?: "Invalid request").toString()) } catch (_: Exception) {}
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
+            clients.remove(client)
             try {
                 client.close()
             } catch (e: Exception) {
@@ -361,19 +391,40 @@ object PCManagerServer {
         sendResponse(out, 200, "OK", "text/html; charset=utf-8", html, extraHeaders = getCorsHeaders())
     }
 
-    private fun handleGetData(out: BufferedOutputStream) {
+    private fun handleGetData(fullPath: String, out: BufferedOutputStream) {
         val repo = repository ?: return
         runBlocking(Dispatchers.IO) {
             try {
-                val accountsWithBalances = repo.accountBalances.first()
-                val categories = repo.allCategories.first()
-                val txWithDetails = repo.transactionsWithDetails.first()
-                val currencyCode = repo.getSettingFlow("primary_currency").first()
-                    ?: repo.getSettingFlow("currency_code").first()
-                    ?: "INR"
+                val params = fullPath.substringAfter('?', "").split('&').filter { it.contains('=') }.associate {
+                    URLDecoder.decode(it.substringBefore('='), "UTF-8") to URLDecoder.decode(it.substringAfter('='), "UTF-8")
+                }
+                val offset = params["offset"]?.toIntOrNull() ?: 0
+                val limit = (params["limit"]?.toIntOrNull() ?: 100).coerceIn(1, 500)
+                require(offset >= 0) { "Invalid page offset" }
+                val snapshot = repo.database.withTransaction {
+                    val accounts = repo.database.accountDao().getAllAccounts().first()
+                    val categories = repo.database.categoryDao().getAllCategoriesSync()
+                    val accountMap = accounts.associateBy { it.id }
+                    val categoryMap = categories.associateBy { it.id }
+                    val page = repo.database.transactionDao().getPage(limit, offset).map { tx ->
+                        TransactionWithDetails(tx, accountMap[tx.accountId], accountMap[tx.toAccountId],
+                            categoryMap[tx.categoryId], categoryMap[tx.subcategoryId])
+                    }
+                    DataPage(FinancialEngine.calculateAccountBalances(accounts, repo.database.transactionDao().getAllTransactionsSync()),
+                        categories, page, repo.database.transactionDao().count(),
+                        repo.getSetting("primary_currency") ?: repo.getSetting("currency_code") ?: "INR")
+                }
+                val accountsWithBalances = snapshot.accounts
+                val categories = snapshot.categories
+                val txWithDetails = snapshot.transactions
+                val total = snapshot.total
+                val currencyCode = snapshot.currency
                 val symbol = CurrencyFormatter.getCurrencySymbol(currencyCode)
 
                 val root = JSONObject()
+                root.put("totalCount", total)
+                root.put("offset", offset)
+                root.put("nextOffset", if (offset.toLong() + txWithDetails.size < total) offset + txWithDetails.size else JSONObject.NULL)
                 root.put("currencyCode", currencyCode)
                 root.put("currencySymbol", symbol)
 
@@ -689,7 +740,7 @@ object PCManagerServer {
         val repo = repository ?: return
         runBlocking(Dispatchers.IO) {
             try {
-                val txs = repo.transactionsWithDetails.first()
+                val txs = repo.currentTransactionsWithDetails()
                 val currency = repo.getSettingFlow("primary_currency").first()
                     ?: repo.getSettingFlow("currency_code").first()
                     ?: "INR"
@@ -756,7 +807,15 @@ object PCManagerServer {
         body: String,
         extraHeaders: Map<String, String> = emptyMap()
     ) {
+        if (body.length > MAX_RESPONSE) {
+            sendResponse(out, 413, "Response Too Large", "application/json", """{"error":"Export is too large for PC Manager. Export from the app instead."}""", getCorsHeaders())
+            return
+        }
         val bytes = body.toByteArray(StandardCharsets.UTF_8)
+        if (bytes.size > MAX_RESPONSE) {
+            sendResponse(out, 413, "Response Too Large", "application/json", """{"error":"Export is too large for PC Manager. Export from the app instead."}""", getCorsHeaders())
+            return
+        }
         val sb = StringBuilder()
         sb.append("HTTP/1.1 $statusCode $statusText\r\n")
         sb.append("Content-Type: $contentType\r\n")

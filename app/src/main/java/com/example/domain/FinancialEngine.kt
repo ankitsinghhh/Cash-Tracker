@@ -22,36 +22,26 @@ object FinancialEngine {
         accounts: List<Account>,
         transactions: List<TransactionEntity>
     ): List<AccountWithBalance> {
-        return accounts.map { account ->
-            var income = 0L
-            var expense = 0L
-            var transferIn = 0L
-            var transferOut = 0L
-            var fees = 0L
-
-            for (tx in transactions) {
-                when (tx.type) {
-                    TransactionType.INCOME -> {
-                        if (tx.accountId == account.id) {
-                            income += tx.amount
-                        }
-                    }
-                    TransactionType.EXPENSE -> {
-                        if (tx.accountId == account.id) {
-                            expense += tx.amount
-                        }
-                    }
-                    TransactionType.TRANSFER -> {
-                        if (tx.accountId == account.id) {
-                            transferOut += tx.amount
-                            fees += tx.transferFee
-                        }
-                        if (tx.toAccountId == account.id) {
-                            transferIn += tx.amount
-                        }
-                    }
+        val ledger = HashMap<Long, LongArray>()
+        for (tx in transactions) {
+            val source = ledger.getOrPut(tx.accountId) { LongArray(5) }
+            when (tx.type) {
+                TransactionType.INCOME -> source[0] += tx.amount
+                TransactionType.EXPENSE -> source[1] += tx.amount
+                TransactionType.TRANSFER -> {
+                    source[3] += tx.amount
+                    source[4] += tx.transferFee
+                    tx.toAccountId?.let { ledger.getOrPut(it) { LongArray(5) }[2] += tx.amount }
                 }
             }
+        }
+        return accounts.map { account ->
+            val totals = ledger[account.id] ?: LongArray(5)
+            val income = totals[0]
+            val expense = totals[1]
+            val transferIn = totals[2]
+            val transferOut = totals[3]
+            val fees = totals[4]
 
             val isLiability = isLiabilityAccount(account.type)
             val calculatedBalance = if (isLiability) {

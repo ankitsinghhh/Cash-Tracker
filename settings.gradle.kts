@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 rootProject.name = "Cash Tracker"
 
 include(":app")
+include(":benchmarks")

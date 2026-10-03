@@ -21,6 +21,11 @@ import com.example.data.model.TransactionType
 import com.example.domain.CurrencyFormatter
 import com.example.domain.FinancialEngine
 import com.example.ui.MainViewModel
+import androidx.paging.LoadState
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
+import com.example.ui.components.LoadingContent
+import com.example.ui.components.ErrorContent
 import com.example.ui.components.EmptyStateView
 import com.example.ui.components.TransactionItemRow
 import com.example.ui.theme.ExpenseRed
@@ -36,7 +41,8 @@ fun AccountDetailScreen(
     onNavigateToEditTransaction: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val allTransactions by viewModel.allTransactionsWithDetails.collectAsStateWithLifecycle()
+    val loaded by viewModel.accountsLoaded.collectAsStateWithLifecycle()
+    val accountTransactions = remember(accountId) { viewModel.accountPages(accountId) }.collectAsLazyPagingItems()
     val allAccounts by viewModel.allAccounts.collectAsStateWithLifecycle()
     val accountBalances by viewModel.accountBalances.collectAsStateWithLifecycle()
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
@@ -49,18 +55,12 @@ fun AccountDetailScreen(
         accountBalances.find { it.account.id == accountId }
     }
 
-    val accountTransactions = remember(accountId, allTransactions) {
-        allTransactions.filter {
-            it.transaction.accountId == accountId || it.transaction.toAccountId == accountId
-        }.sortedByDescending { it.transaction.dateMillis }
-    }
-
     var showEditDialog by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     if (account == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Account not found")
+            if (!loaded) LoadingContent() else Text("Account not found")
         }
         return
     }
@@ -182,13 +182,17 @@ fun AccountDetailScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Transaction History (${accountTransactions.size})",
+                        text = "Transaction History (${accountTransactions.itemCount} loaded)",
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
             }
 
-            if (accountTransactions.isEmpty()) {
+            if (accountTransactions.loadState.refresh is LoadState.Loading) {
+                item { LoadingContent() }
+            } else if (accountTransactions.loadState.refresh is LoadState.Error) {
+                item { ErrorContent("Could not load transactions", accountTransactions::retry) }
+            } else if (accountTransactions.itemCount == 0) {
                 item {
                     EmptyStateView(
                         title = "No Transactions Found",
@@ -196,7 +200,8 @@ fun AccountDetailScreen(
                     )
                 }
             } else {
-                items(accountTransactions, key = { it.transaction.id }) { item ->
+                items(accountTransactions.itemCount, key = accountTransactions.itemKey { it.transaction.id }, contentType = { "transaction" }) { index ->
+                    val item = accountTransactions[index] ?: return@items
                     TransactionItemRow(
                         item = item,
                         currencyCode = currencyCode,
@@ -204,6 +209,8 @@ fun AccountDetailScreen(
                     )
                 }
             }
+            if (accountTransactions.loadState.append is LoadState.Loading) item { LoadingContent() }
+            if (accountTransactions.loadState.append is LoadState.Error) item { ErrorContent("Could not load more", accountTransactions::retry) }
         }
     }
 

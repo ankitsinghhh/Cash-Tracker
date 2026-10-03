@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.StickyNote2
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.example.ui.components.LoadingContent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +40,9 @@ fun DailyMemosScreen(
 ) {
     val context = LocalContext.current
     val memos by viewModel.memos.collectAsStateWithLifecycle()
+    val loadedQueries by viewModel.loadedQueries.collectAsStateWithLifecycle()
+    if (!("memos" in loadedQueries)) { LoadingContent(); return }
+
     var showAddMemoDialog by remember { mutableStateOf(false) }
 
     Scaffold(

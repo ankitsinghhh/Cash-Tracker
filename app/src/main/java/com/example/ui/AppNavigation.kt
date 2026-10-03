@@ -21,6 +21,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import com.example.ui.components.ErrorContent
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -45,7 +48,7 @@ import com.example.ui.screens.stats.StatsScreen
 import com.example.ui.screens.transaction.AddEditTransactionScreen
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
-    object Home : Screen("home", "Trans", Icons.Default.ReceiptLong)
+    object Home : Screen("home", "Transactions", Icons.Default.ReceiptLong)
     object Stats : Screen("stats", "Stats", Icons.Default.PieChart)
     object Accounts : Screen("accounts", "Accounts", Icons.Default.AccountBalanceWallet)
     object More : Screen("more", "More", Icons.Default.Settings)
@@ -58,11 +61,19 @@ val allBottomNavItems = listOf(
     Screen.More
 )
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun MainAppNavigation(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier
 ) {
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(viewModel) {
+        viewModel.notices.collect { notice ->
+            val result = snackbar.showSnackbar(notice.message, notice.actionLabel, withDismissAction = true)
+            if (result == SnackbarResult.ActionPerformed) notice.onAction?.invoke()
+        }
+    }
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -98,6 +109,7 @@ fun MainAppNavigation(
         return
     }
 
+    val readErrors by viewModel.readErrors.collectAsStateWithLifecycle()
     val currentRoute = currentDestination?.route ?: Screen.Home.route
 
     LaunchedEffect(showAccountsTab, currentRoute) {
@@ -114,7 +126,8 @@ fun MainAppNavigation(
     val isBottomBarVisible = currentNavItems.any { it.route == currentRoute } || currentRoute == "about"
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbar) },
+        modifier = modifier.fillMaxSize().semantics { testTagsAsResourceId = true },
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (isBottomBarVisible) {
@@ -437,6 +450,14 @@ fun MainAppNavigation(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
+        }
+        if (readErrors.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Could not load records") },
+                text = { Text(readErrors.values.first()) },
+                confirmButton = { TextButton(onClick = viewModel::retryReads) { Text("Retry") } }
+            )
         }
     }
 }

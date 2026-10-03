@@ -90,7 +90,8 @@ data class Category(
         Index("accountId"),
         Index("toAccountId"),
         Index("categoryId"),
-        Index("dateMillis")
+        Index("dateMillis"),
+        Index(value = ["occurrenceKey"], unique = true)
     ]
 )
 data class TransactionEntity(
@@ -111,7 +112,8 @@ data class TransactionEntity(
     val isExcludedFromStats: Boolean = false,
     val recurringRuleId: Long? = null,
     val installmentId: Long? = null,
-    val isBookmarked: Boolean = false
+    val isBookmarked: Boolean = false,
+    val occurrenceKey: String? = null
 )
 
 @Entity(

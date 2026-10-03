@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import com.example.ui.components.LoadingContent
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +45,9 @@ fun AccountsScreen(
     val accountBalances by viewModel.accountBalances.collectAsStateWithLifecycle()
     val netWorth by viewModel.netWorth.collectAsStateWithLifecycle()
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
+
+    val loadedQueries by viewModel.loadedQueries.collectAsStateWithLifecycle()
+    if (!("allAccounts" in loadedQueries && "transactions" in loadedQueries)) { LoadingContent(); return }
 
     var showAddAccountDialog by remember { mutableStateOf(false) }
     var accountToEdit by remember { mutableStateOf<Account?>(null) }

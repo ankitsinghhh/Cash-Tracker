@@ -3,14 +3,34 @@ package com.example.data.repository
 import com.example.data.local.AppDatabase
 import com.example.data.model.*
 import com.example.domain.FinancialEngine
+import androidx.paging.*
+import androidx.room.withTransaction
+import com.example.ui.TransactionFilterState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.*
 
-class FinanceRepository(val database: AppDatabase) {
+class FinanceRepository(val database: AppDatabase, private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)) {
+    private val reload = MutableStateFlow(0)
+    private val _loadedQueries = MutableStateFlow<Set<String>>(emptySet())
+    val loadedQueries = _loadedQueries.asStateFlow()
+    private val _readErrors = MutableStateFlow<Map<String, String>>(emptyMap())
+    val readErrors = _readErrors.asStateFlow()
+    fun retryReads() { _readErrors.value = emptyMap(); reload.value++ }
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun <T> readList(key: String, source: Flow<List<T>>): Flow<List<T>> = reload.flatMapLatest {
+        source.onEach {
+            _loadedQueries.update { keys -> keys + key }
+            _readErrors.update { errors -> errors - key }
+        }.catch { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            _readErrors.update { errors -> errors + (key to "Could not load your records. Please retry.") }
+            emit(emptyList())
+        }
+    }.shared()
+
+    private fun <T> Flow<T>.shared() = distinctUntilChanged().shareIn(scope, SharingStarted.WhileSubscribed(5000), replay = 1)
 
     private val accountDao = database.accountDao()
     private val categoryDao = database.categoryDao()
@@ -22,24 +42,24 @@ class FinanceRepository(val database: AppDatabase) {
     private val bookmarkDao = database.bookmarkDao()
     private val settingDao = database.settingDao()
 
-    val accounts: Flow<List<Account>> = accountDao.getAllActiveAccounts()
-    val allAccounts: Flow<List<Account>> = accountDao.getAllAccounts()
-    val categories: Flow<List<Category>> = categoryDao.getAllActiveCategories()
-    val allCategories: Flow<List<Category>> = categoryDao.getAllCategories()
-    val transactions: Flow<List<TransactionEntity>> = transactionDao.getAllTransactions()
-    val budgets: Flow<List<Budget>> = budgetDao.getAllBudgets()
-    val recurring: Flow<List<RecurringTransaction>> = recurringDao.getAllRecurring()
-    val activeRecurring: Flow<List<RecurringTransaction>> = recurringDao.getActiveRecurring()
-    val installments: Flow<List<InstallmentPlan>> = installmentDao.getAllInstallments()
-    val activeInstallments: Flow<List<InstallmentPlan>> = installmentDao.getActiveInstallments()
-    val memos: Flow<List<DailyMemo>> = memoDao.getAllMemos()
-    val bookmarks: Flow<List<Bookmark>> = bookmarkDao.getAllBookmarks()
+    val accounts: Flow<List<Account>> = readList("accounts", accountDao.getAllActiveAccounts())
+    val allAccounts: Flow<List<Account>> = readList("allAccounts", accountDao.getAllAccounts())
+    val categories: Flow<List<Category>> = readList("categories", categoryDao.getAllActiveCategories())
+    val allCategories: Flow<List<Category>> = readList("allCategories", categoryDao.getAllCategories())
+    val transactions: Flow<List<TransactionEntity>> = readList("transactions", transactionDao.getAllTransactions())
+    val budgets: Flow<List<Budget>> = readList("budgets", budgetDao.getAllBudgets())
+    val recurring: Flow<List<RecurringTransaction>> = readList("recurring", recurringDao.getAllRecurring())
+    val activeRecurring: Flow<List<RecurringTransaction>> = readList("activeRecurring", recurringDao.getActiveRecurring())
+    val installments: Flow<List<InstallmentPlan>> = readList("installments", installmentDao.getAllInstallments())
+    val activeInstallments: Flow<List<InstallmentPlan>> = readList("activeInstallments", installmentDao.getActiveInstallments())
+    val memos: Flow<List<DailyMemo>> = readList("memos", memoDao.getAllMemos())
+    val bookmarks: Flow<List<Bookmark>> = readList("bookmarks", bookmarkDao.getAllBookmarks())
 
     // Combined Flow: Transactions with populated Account, ToAccount, Category, Subcategory
     val transactionsWithDetails: Flow<List<TransactionWithDetails>> = combine(
-        transactionDao.getAllTransactions(),
-        accountDao.getAllAccounts(),
-        categoryDao.getAllCategories()
+        transactions,
+        allAccounts,
+        allCategories
     ) { txList, accList, catList ->
         val accMap = accList.associateBy { it.id }
         val catMap = catList.associateBy { it.id }
@@ -53,32 +73,88 @@ class FinanceRepository(val database: AppDatabase) {
                 subcategory = tx.subcategoryId?.let { catMap[it] }
             )
         }
-    }.distinctUntilChanged().flowOn(Dispatchers.Default)
+    }.flowOn(Dispatchers.Default).shared()
 
     // Calculated Account Balances with Real-Time Ledger integrity
     val accountBalances: Flow<List<AccountWithBalance>> = combine(
-        accountDao.getAllAccounts(),
-        transactionDao.getAllTransactions()
+        allAccounts,
+        transactions
     ) { accList, txList ->
         FinancialEngine.calculateAccountBalances(accList, txList)
-    }.distinctUntilChanged().flowOn(Dispatchers.Default)
+    }.flowOn(Dispatchers.Default).shared()
 
     // Calculated Net Worth Summary
     val netWorth: Flow<NetWorthSummary> = accountBalances.map { balances ->
         FinancialEngine.calculateNetWorth(balances)
-    }.distinctUntilChanged().flowOn(Dispatchers.Default)
+    }.flowOn(Dispatchers.Default).shared()
+
+    fun withDetails(source: Flow<List<TransactionEntity>>): Flow<List<TransactionWithDetails>> =
+        combine(source, allAccounts, allCategories) { txs, accounts, categories ->
+            val accountMap = accounts.associateBy { it.id }
+            val categoryMap = categories.associateBy { it.id }
+            txs.map { tx -> TransactionWithDetails(tx, accountMap[tx.accountId],
+                accountMap[tx.toAccountId], categoryMap[tx.categoryId], categoryMap[tx.subcategoryId]) }
+        }.flowOn(Dispatchers.Default)
+
+    val monthlyTotals = readList("monthly", transactionDao.monthlyTotals())
+
+    fun transactionsBetween(start: Long, end: Long) = withDetails(transactionDao.getTransactionsBetween(start, end))
+
+    // One-shot exports must read the database, not the replay cache of a UI flow.
+    suspend fun currentTransactionsWithDetails(): List<TransactionWithDetails> = database.withTransaction {
+        val accounts = accountDao.getAllAccounts().first().associateBy { it.id }
+        val categories = categoryDao.getAllCategoriesSync().associateBy { it.id }
+        transactionDao.getAllTransactionsSync().map { tx ->
+            TransactionWithDetails(tx, accounts[tx.accountId], accounts[tx.toAccountId],
+                categories[tx.categoryId], categories[tx.subcategoryId])
+        }
+    }
+
+    private fun enrichPages(pages: Flow<PagingData<TransactionEntity>>) =
+        combine(pages, allAccounts, allCategories) { data, accounts, categories ->
+            val accountMap = accounts.associateBy { it.id }
+            val categoryMap = categories.associateBy { it.id }
+            data.map { tx -> TransactionWithDetails(tx, accountMap[tx.accountId], accountMap[tx.toAccountId],
+                categoryMap[tx.categoryId], categoryMap[tx.subcategoryId]) }
+        }.flowOn(Dispatchers.Default)
+
+    fun accountPages(id: Long) = enrichPages(Pager(PagingConfig(50, enablePlaceholders = false)) {
+        transactionDao.pageForAccount(id)
+    }.flow)
+
+    fun searchPages(filter: TransactionFilterState) = enrichPages(Pager(PagingConfig(50, enablePlaceholders = false)) {
+        transactionDao.searchPages(filter.searchQuery.trim(), filter.typeFilter?.name, filter.accountIdFilter,
+            filter.categoryIdFilter, filter.onlyWithReceipt, filter.startDateMillis, filter.endDateMillis,
+            filter.payeeFilter, filter.tagFilter)
+    }.flow)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun searchTotals(filter: TransactionFilterState) = reload.flatMapLatest { transactionDao.searchTotals(filter.searchQuery.trim(),
+        filter.typeFilter?.name, filter.accountIdFilter, filter.categoryIdFilter, filter.onlyWithReceipt,
+        filter.startDateMillis, filter.endDateMillis, filter.payeeFilter, filter.tagFilter)
+        .onEach { _readErrors.update { errors -> errors - "searchTotals" } }
+        .catch { error ->
+            if (error is kotlinx.coroutines.CancellationException) throw error
+            _readErrors.update { errors -> errors + ("searchTotals" to "Could not load search totals. Please retry.") }
+            emit(SearchTotals())
+        }
+    }
+
+    private suspend fun chunks(ids: List<Long>, action: suspend (List<Long>) -> Unit) = database.withTransaction {
+        ids.distinct().chunked(500).forEach { action(it) }
+    }
 
     // Database CRUD
     suspend fun insertTransaction(tx: TransactionEntity): Long = transactionDao.insert(tx)
     suspend fun updateTransaction(tx: TransactionEntity) = transactionDao.update(tx)
     suspend fun deleteTransaction(tx: TransactionEntity) = transactionDao.delete(tx)
     suspend fun deleteTransactionById(id: Long) = transactionDao.deleteById(id)
-    suspend fun deleteTransactionsByIds(ids: List<Long>) = transactionDao.deleteByIds(ids)
-    suspend fun bulkUpdateCategory(ids: List<Long>, categoryId: Long) = transactionDao.updateCategoryForIds(ids, categoryId)
-    suspend fun bulkUpdateAccount(ids: List<Long>, accountId: Long) = transactionDao.updateAccountForIds(ids, accountId)
-    suspend fun bulkUpdateDate(ids: List<Long>, dateMillis: Long) = transactionDao.updateDateForIds(ids, dateMillis)
-    suspend fun bulkUpdateNote(ids: List<Long>, note: String) = transactionDao.updateNoteForIds(ids, note)
-    suspend fun bulkUpdatePayee(ids: List<Long>, payee: String) = transactionDao.updatePayeeForIds(ids, payee)
+    suspend fun deleteTransactionsByIds(ids: List<Long>) = chunks(ids) { chunk -> transactionDao.deleteByIds(chunk) }
+    suspend fun bulkUpdateCategory(ids: List<Long>, categoryId: Long) = chunks(ids) { chunk -> transactionDao.updateCategoryForIds(chunk, categoryId) }
+    suspend fun bulkUpdateAccount(ids: List<Long>, accountId: Long) = chunks(ids) { chunk -> transactionDao.updateAccountForIds(chunk, accountId) }
+    suspend fun bulkUpdateDate(ids: List<Long>, dateMillis: Long) = chunks(ids) { chunk -> transactionDao.updateDateForIds(chunk, dateMillis) }
+    suspend fun bulkUpdateNote(ids: List<Long>, note: String) = chunks(ids) { chunk -> transactionDao.updateNoteForIds(chunk, note) }
+    suspend fun bulkUpdatePayee(ids: List<Long>, payee: String) = chunks(ids) { chunk -> transactionDao.updatePayeeForIds(chunk, payee) }
 
     suspend fun insertAccount(account: Account): Long = accountDao.insert(account)
     suspend fun updateAccount(account: Account) = accountDao.update(account)

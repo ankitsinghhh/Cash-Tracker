@@ -21,6 +21,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.model.*
 import com.example.domain.CurrencyFormatter
 import com.example.ui.MainViewModel
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.example.ui.components.LoadingContent
 import com.example.ui.components.EmptyStateView
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
@@ -37,12 +39,15 @@ fun RecurringInstallmentsScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier
 ) {
-    var activeTab by remember { mutableStateOf(RecurringTab.RECURRING_SUBSCRIPTIONS) }
+    var activeTab by rememberSaveable { mutableStateOf(RecurringTab.RECURRING_SUBSCRIPTIONS) }
     val recurringList by viewModel.allRecurring.collectAsStateWithLifecycle()
     val installmentsList by viewModel.allInstallments.collectAsStateWithLifecycle()
     val accounts by viewModel.accounts.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
+
+    val loadedQueries by viewModel.loadedQueries.collectAsStateWithLifecycle()
+    if ("recurring" !in loadedQueries || "installments" !in loadedQueries) { LoadingContent(); return }
 
     var showAddRecurringDialog by remember { mutableStateOf(false) }
     var showAddInstallmentDialog by remember { mutableStateOf(false) }

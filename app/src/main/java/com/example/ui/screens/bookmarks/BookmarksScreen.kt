@@ -21,6 +21,7 @@ import com.example.data.model.Bookmark
 import com.example.data.model.TransactionType
 import com.example.domain.CurrencyFormatter
 import com.example.ui.MainViewModel
+import com.example.ui.components.LoadingContent
 import com.example.ui.components.EmptyStateView
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
@@ -34,6 +35,9 @@ fun BookmarksScreen(
 ) {
     val bookmarks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
+
+    val loadedQueries by viewModel.loadedQueries.collectAsStateWithLifecycle()
+    if ("bookmarks" !in loadedQueries) { LoadingContent(); return }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),

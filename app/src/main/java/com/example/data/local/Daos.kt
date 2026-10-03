@@ -3,6 +3,21 @@ package com.example.data.local
 import androidx.room.*
 import com.example.data.model.*
 import kotlinx.coroutines.flow.Flow
+import androidx.paging.PagingSource
+
+// The same predicates drive pages and totals, including subcategories and date bounds.
+private const val FILTER_SQL = " FROM transactions t LEFT JOIN accounts a ON a.id=t.accountId " +
+    "LEFT JOIN categories c ON c.id=t.categoryId LEFT JOIN categories s ON s.id=t.subcategoryId " +
+    "WHERE (:type IS NULL OR t.type=:type) " +
+    "AND (:account IS NULL OR t.accountId=:account OR t.toAccountId=:account) " +
+    "AND (:category IS NULL OR t.categoryId=:category OR t.subcategoryId=:category) " +
+    "AND (:receipt=0 OR t.receiptUri IS NOT NULL) " +
+    "AND (:start IS NULL OR t.dateMillis>=:start) AND (:end IS NULL OR t.dateMillis<=:end) " +
+    "AND (:payee='' OR instr(lower(t.payee),lower(:payee))>0) " +
+    "AND (:tag='' OR instr(lower(t.tags),lower(:tag))>0) " +
+    "AND (:query='' OR instr(lower(t.payee),lower(:query))>0 OR instr(lower(t.note),lower(:query))>0 " +
+    "OR instr(lower(t.tags),lower(:query))>0 OR instr(lower(c.name),lower(:query))>0 " +
+    "OR instr(lower(s.name),lower(:query))>0 OR instr(lower(a.name),lower(:query))>0)"
 
 @Dao
 interface AccountDao {
@@ -75,6 +90,36 @@ interface CategoryDao {
 
 @Dao
 interface TransactionDao {
+    @Query("SELECT strftime('%Y-%m',dateMillis/1000,'unixepoch','localtime') AS monthString, " +
+        "SUM(CASE WHEN type='INCOME' AND isExcludedFromStats=0 THEN amount ELSE 0 END) AS income, " +
+        "SUM(CASE WHEN isExcludedFromStats=1 THEN 0 WHEN type='EXPENSE' THEN amount WHEN type='TRANSFER' THEN transferFee ELSE 0 END) AS expense, " +
+        "COUNT(*) AS count FROM transactions GROUP BY monthString ORDER BY monthString DESC")
+    fun monthlyTotals(): Flow<List<MonthlyTotals>>
+    @Query("SELECT t.*" + FILTER_SQL + " ORDER BY t.dateMillis DESC,t.id DESC")
+    fun searchPages(query: String, type: String?, account: Long?, category: Long?, receipt: Boolean,
+        start: Long?, end: Long?, payee: String, tag: String): PagingSource<Int, TransactionEntity>
+
+    @Query("SELECT COUNT(*) AS count, COALESCE(SUM(CASE WHEN t.type='INCOME' AND t.isExcludedFromStats=0 THEN t.amount ELSE 0 END),0) AS income, " +
+        "COALESCE(SUM(CASE WHEN t.isExcludedFromStats=1 THEN 0 WHEN t.type='EXPENSE' THEN t.amount WHEN t.type='TRANSFER' THEN t.transferFee ELSE 0 END),0) AS expense" + FILTER_SQL)
+    fun searchTotals(query: String, type: String?, account: Long?, category: Long?, receipt: Boolean,
+        start: Long?, end: Long?, payee: String, tag: String): Flow<SearchTotals>
+    @Query("SELECT * FROM transactions WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<TransactionEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertOccurrence(transaction: TransactionEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun restoreDeleted(transactions: List<TransactionEntity>)
+
+    @Query("SELECT * FROM transactions ORDER BY dateMillis DESC, id DESC LIMIT :limit OFFSET :offset")
+    suspend fun getPage(limit: Int, offset: Int): List<TransactionEntity>
+
+    @Query("SELECT COUNT(*) FROM transactions")
+    suspend fun count(): Int
+
+    @Query("SELECT * FROM transactions WHERE accountId = :accountId OR toAccountId = :accountId ORDER BY dateMillis DESC, id DESC")
+    fun pageForAccount(accountId: Long): PagingSource<Int, TransactionEntity>
     @Query("SELECT * FROM transactions ORDER BY dateMillis DESC, id DESC")
     fun getAllTransactions(): Flow<List<TransactionEntity>>
 
@@ -89,6 +134,9 @@ interface TransactionDao {
 
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getTransactionById(id: Long): TransactionEntity?
+
+    @Query("SELECT * FROM transactions WHERE id = :id")
+    fun getTransactionByIdFlow(id: Long): Flow<List<TransactionEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(transaction: TransactionEntity): Long
@@ -153,6 +201,11 @@ interface BudgetDao {
 
 @Dao
 interface RecurringDao {
+    @Query("SELECT * FROM recurring_transactions WHERE id = :id")
+    suspend fun getById(id: Long): RecurringTransaction?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<RecurringTransaction>)
     @Query("SELECT * FROM recurring_transactions WHERE isActive = 1 ORDER BY nextDueDateMillis ASC")
     fun getActiveRecurring(): Flow<List<RecurringTransaction>>
 
@@ -174,6 +227,11 @@ interface RecurringDao {
 
 @Dao
 interface InstallmentDao {
+    @Query("SELECT * FROM installment_plans WHERE id = :id")
+    suspend fun getById(id: Long): InstallmentPlan?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<InstallmentPlan>)
     @Query("SELECT * FROM installment_plans WHERE isCompleted = 0 ORDER BY nextDueDateMillis ASC")
     fun getActiveInstallments(): Flow<List<InstallmentPlan>>
 
@@ -195,6 +253,8 @@ interface InstallmentDao {
 
 @Dao
 interface MemoDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<DailyMemo>)
     @Query("SELECT * FROM daily_memos WHERE dateString = :dateString")
     fun getMemoForDate(dateString: String): Flow<DailyMemo?>
 
@@ -216,6 +276,8 @@ interface MemoDao {
 
 @Dao
 interface BookmarkDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<Bookmark>)
     @Query("SELECT * FROM bookmarks ORDER BY id DESC")
     fun getAllBookmarks(): Flow<List<Bookmark>>
 

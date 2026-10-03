@@ -1,60 +1,43 @@
-# Cash Tracker performance review
+# Cash Tracker performance improvements
 
-Reviewed on 3 October 2026. Findings below come from source inspection; no device trace or frame-time benchmark was available.
+Updated 4 October 2026. This change implements the source-level improvements identified in the initial review. Physical-device frame measurements and generated application Baseline Profiles remain pending; no phone was accessed or app installed during this work.
 
-## Implemented scroll changes
+## UI and scrolling
 
-- Prepare the home month once in `MainViewModel.monthPageData`, on `Dispatchers.Default`. The totals strip and animated content now share that result instead of running separate full-history calculations during composition.
-- Remove home subscriptions to unused summary/grouping flows, which previously triggered additional calculations and recompositions.
-- Move transaction enrichment, account balances, summaries, filtering and analytics transformations off the UI thread. Suppress equal derived results before downstream collection where applicable.
-- Give daily headers and transaction rows distinct lazy content types for better reuse.
-- Flatten expanded weekly transactions into individual lazy items. Preserve expanded week state outside recycled items, keyed by week number; add bottom clearance for the add button.
-- Cache transaction row amount/time strings across selection changes.
-- Yield the month swipe recognizer to consumed child gestures and multiple pointers; use a monotonic clock for its cooldown.
-- Make financial analytics date formatters thread-local so concurrent background computations cannot corrupt date groups.
+| Review item | Implementation |
+| --- | --- |
+| Repeated work on the UI thread | The home month is prepared once on Default from a bounded database date query. Enrichment, filtering, grouping, balances and analytics run in background flows; derived snapshots are shared. |
+| Expanded weekly scrolling | Individual transaction rows are lazy items with stable keys and content types. Expanded-week state survives recycling and saved-state restoration. Vertical gestures yield to scrolling; horizontal gestures retain month navigation. |
+| Compose compatibility | Compose BOM 2025.07.00 aligns UI and test libraries on Compose 1.8.3, including the simulator-aware lazy-list prefetch scheduler. |
+| Search stalls | Debounced, cancellable SQL filters with 50-record Paging pages. Totals and counts cover all matches through an aggregate query. Account history also uses Paging. |
+| Loading, missing and failure states | Initial loading is distinct from an empty list or deleted record. Database errors expose retry; pagination exposes initial and append errors. The navigation host stays mounted when an error dialog appears. |
+| Save errors | Save validation and transaction/bookmark writes are atomic. Busy state resets in finally, errors reach the draft, and successful saves navigate only after completion. |
+| State and filter consistency | Saveable drafts, selected calendar date, expanded weeks and tab/month list state. Search and home share query/type/account/category/subcategory/receipt/date/payee/tag predicates. Date bounds appear as chips. |
+| Accessibility | 48 dp month controls, readable secondary text, selected semantics, explicit descriptions and a stacked transaction layout at large font scale. |
+| Charts | Only active analytics subscribe. Category, comparison and drilldown lists use separate lazy rows; rank bars retain a common scale. Decorative chart animations no longer restart from zero on every data refresh. |
+| Navigation and deletion | Transactions replaces the abbreviated navigation label. Accounts is visible by default for new setups, while saved preferences are retained. Transaction deletion offers Undo. |
 
-These changes target identified sources of unnecessary work. They do not establish a measured frame-rate improvement or a guarantee that every screen is free of jank.
+## Data and backend
 
-## UI/UX improvements to prioritize
+| Review item | Implementation |
+| --- | --- |
+| Recurring/installment processing never reached | Use first() for snapshots, then re-read each rule inside an insert/advance transaction. A unique occurrence key makes concurrent runs and retries safe. Catch-up work is bounded to 128 occurrences per rule per run. |
+| Persistent processing | WorkManager schedules unique launch work and a 12-hour periodic job with bounded retries. Android controls execution time; this is not an exact alarm. |
+| Large histories | Home and comparison queries bound dates; search/account history page 50 records. Monthly history uses SQL aggregates. Account balance calculation scans the ledger once, instead of once per account. |
+| Partial restore/import/bulk operations | Validate backups before clearing, including duplicate scheduled occurrences; restore, imports, onboarding settings and bulk operations run in Room transactions. CSV rows stream into 500-record batches, with complete rollback on a bad row. Named CSV columns prevent optional fields from reading unrelated values. CSV exports retain cents. |
+| Database upgrades | Schema version 2 adds occurrence uniqueness through an explicit 1-to-2 migration; destructive migration fallback is removed. Exported Room schema and a frozen v1 SQL fixture provide migration regression coverage. |
+| Errors and cancellation | Mutations expose an error channel, save/import busy states recover, and coroutine cancellation is propagated. Read failures expose a retry path. |
+| PC Manager load | Four executor threads and a 16-client queue, 15-second socket timeout, header/body limits, 32 MiB response limit, closed connections on stop, and 100-record default / 500-record maximum pages. Refreshes read a consistent database snapshot; exports avoid replaying cached UI data. PC history shows loaded/total counts and Load more. |
+| Release performance | R8 and resource shrinking enabled, Moshi reflection keep rules included, unused AI/network dependencies removed, wrapper restored, Java 21 CI added. Macrobenchmarks and the Baseline Profile generator cover launch, daily scroll, weekly expansion, search and stats navigation. |
 
-| Priority | Improvement | Reason and relevant code |
-| --- | --- | --- |
-| High | Move search filtering, grouping and totals into a background result flow; debounce query changes and cancel superseded work. | `SearchFilterScreen.kt` scans, sorts and groups all records inside composition while typing. |
-| High | Distinguish loading, empty, missing-record and error states. | Several lists begin with an empty `StateFlow`; account details initially show "Account not found" before accounts arrive. |
-| High | Recover from failed saves with an inline explanation and retry; retain the draft. | `AddEditTransactionScreen.kt` has an `isSaving` guard, but `MainViewModel.saveTransaction` provides only a success callback and no failure result. |
-| Medium | Keep filters consistent between search and home, show active date bounds and include subcategories. | Search chips primarily change local state; home and search predicates differ. |
-| Medium | Preserve list position, selected calendar date and form drafts when switching tabs or rotating. | Several screen states use `remember`; crossfades can dispose the outgoing tab. Scope scroll state to the month/tab, rather than restoring one position into another month. |
-| Medium | Improve touch targets, large-text layouts and screen-reader descriptions. | Some month controls are explicitly 32 dp; transaction labels have narrow fixed widths and tiny secondary text. Test long payees, large amounts, font scaling and both themes. |
-| Medium | Reduce chart animation restarts and avoid rendering large category/subcategory lists inside one lazy item. | `CustomCharts.kt` includes eager `forEach` content; analytics pages collect results for inactive views. |
-| Medium | Clarify navigation and destructive actions. | Rename "Trans" to "Transactions", make account visibility easier to discover, and add undo for deletion where feasible. |
+## Verification
 
-## Backend/data improvements to prioritize
+Regression coverage includes concurrent date formatting, lazy weekly scrolling, gesture direction, saved-state restoration, concurrent recurring processing, installment completion, restore/import rollback, SQL search totals, transfers/fees/liability balances, a 50,000-record ledger, the v1 database migration, failed-save retry and PC request/page limits.
 
-The app uses a local Room database and an optional embedded PC Manager server.
+See [build and performance instructions](build-and-performance.md) for commands, profile capture and device measurement. Local validation results are recorded there after the final build.
 
-| Priority | Improvement | Reason and relevant code |
-| --- | --- | --- |
-| High | Fix recurring/installment snapshots, then make each occurrence atomic and safe to retry. | `RecurringProcessor.kt` calls `collect` on never-ending Room flows before its processing loops. `return@collect` only returns from one emission; the loops are never reached during normal collection. Use `first()` for a snapshot, a database transaction for insert/advance, and uniqueness for each occurrence. |
-| High | Use bounded date/account database queries and Paging for large histories. | Repository/ViewModel load all transactions and filter them repeatedly. `Daos.kt` already has date/account queries and individual indexes; use those before adding more indexes. |
-| High | Make restore/import and related multi-write operations atomic. | `BackupManager.restoreJsonBackup` clears the database and then performs separate writes. Failure can leave partial data and intermediate emissions. Validate first, then use a Room transaction. |
-| High | Add explicit migrations and exported schemas. | `AppDatabase.kt` disables schema export and uses destructive migration fallback. Future schema updates should preserve users' financial records. |
-| High | Return typed operation errors and reset UI busy states reliably. | Many ViewModel mutations launch writes without an error channel. Handle errors without swallowing coroutine cancellation. |
-| Medium | Share repository snapshots and aggregate account balances in one pass or in SQL. | `FinanceRepository.netWorth` can recollect the cold balance flow; `FinancialEngine.calculateAccountBalances` scans all transactions once per account. |
-| Medium | Bound PC Manager concurrency, headers, body size and response sizes. | `PCManagerServer.kt` uses a cached thread pool and allocates the declared request length. A 15-second socket timeout already exists; add capacity/request limits and paginated responses. |
-| Medium | Use persistent scheduled work for recurring processing and chunk large imports/bulk edits. | Launch-only processing misses periods when the app is closed. Batch writes to limit invalidations and memory pressure. |
+## Remaining measurements
 
-## Validation and release gates
+Run the optimized build on a dedicated mid-range Android device with 1,000, 10,000 and 50,000 records. Compare frame-duration percentiles, missed frames, startup time, memory and query latency on the same device and dataset before/after. Test rapid month changes, large fonts, light/dark themes, simultaneous PC edits and import failures. Generate and commit the application Baseline Profile, then rerun measurements with and without it. The implemented changes remove identified sources of excessive work; they do not establish a measured frame-rate improvement or guarantee zero jank.
 
-- Added `FinancialEngineConcurrencyTest`: eight workers repeatedly check date grouping and totals with different dates.
-- Added `ScrollRegressionTest`: a 500-row expanded week remains lazy and expanded after scrolling; vertical gestures scroll without changing months, while horizontal month navigation still works.
-- `git diff --check` passed.
-- Automated Kotlin/Android tests were not executed. This checkout lacks `gradlew`, `gradlew.bat` and `gradle-wrapper.jar`; no Java, Gradle or Android SDK toolchain was found in the checked local locations.
-- Before release, restore a complete build setup and run `:app:testDebugUnitTest` and `:app:lintDebug`.
-- Measure scrolling in an optimized release build on a physical mid-range device. Enable R8 with the required reflection rules after validating Moshi-backed backup/import features; add Baseline Profiles and Macrobenchmark coverage for launch, daily scrolling, weekly expansion, search and tab changes.
-- Exercise 1,000 / 10,000 / 50,000 records, rapid month changes, simultaneous PC edits, recurring processing and import failures. Record frame times, missed-frame counts, memory and query latency against the same device/build/data baseline. At 60 Hz a frame has roughly 16.7 ms; at 120 Hz roughly 8.3 ms.
-
-## Reference guidance
-
-- [Compose performance best practices](https://developer.android.com/develop/ui/compose/performance/bestpractices)
-- [Lazy lists, keys and content types](https://developer.android.com/develop/ui/compose/lists)
-- [Compose performance and release profiling](https://developer.android.com/develop/ui/compose/performance)
+Reference guidance: [Compose performance](https://developer.android.com/develop/ui/compose/performance/bestpractices), [Baseline Profiles](https://developer.android.com/topic/performance/baselineprofiles/create-baselineprofile), [Macrobenchmark](https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview).

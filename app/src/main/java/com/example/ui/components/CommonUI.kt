@@ -29,6 +29,9 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.platform.LocalDensity
 import com.example.data.model.*
 import com.example.domain.CurrencyFormatter
 import com.example.ui.theme.*
@@ -134,7 +137,7 @@ fun MonthSelectorHeader(
         ) {
             IconButton(
                 onClick = onPreviousMonth,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.ChevronLeft,
@@ -170,7 +173,7 @@ fun MonthSelectorHeader(
 
             IconButton(
                 onClick = onNextMonth,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
@@ -211,7 +214,7 @@ fun PeriodTotalsBar(
                 ) {
                     Text(
                         text = "Income",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(2.dp))
@@ -234,7 +237,7 @@ fun PeriodTotalsBar(
                 ) {
                     Text(
                         text = "Expenses",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(2.dp))
@@ -257,7 +260,7 @@ fun PeriodTotalsBar(
                 ) {
                     Text(
                         text = "Total",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.5.sp),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(2.dp))
@@ -348,6 +351,7 @@ fun TransactionItemRow(
     }
 
     val isThemeDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val useLargeTextLayout = LocalDensity.current.fontScale >= 1.3f
     val selectedBgColor = if (isThemeDark) {
         Color(0xFF3E2226) // Deep warm burgundy highlight in dark mode (as user confirmed: "for dark its fine whatever is there currently")
     } else {
@@ -357,6 +361,7 @@ fun TransactionItemRow(
     Surface(
         modifier = modifier
             .fillMaxWidth()
+            .semantics { selected = isSelected }
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
@@ -371,6 +376,16 @@ fun TransactionItemRow(
         } else null,
         tonalElevation = 0.dp
     ) {
+        if (useLargeTextLayout) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(mainHighlightText, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Text("$amountPrefix $formattedAmount", color = amountColor, style = MaterialTheme.typography.titleMedium)
+                Text(categoryDisplayName, style = MaterialTheme.typography.bodySmall)
+                Text(accountSubtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(timeString, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (tx.receiptUri != null) Text("Receipt attached", style = MaterialTheme.typography.bodySmall)
+            }
+        } else {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -379,7 +394,7 @@ fun TransactionItemRow(
         ) {
             // Left Category Section: Text / Emoji only (no bulky circle box)
             Box(
-                modifier = Modifier.widthIn(min = 60.dp, max = 84.dp),
+                modifier = Modifier.widthIn(min = 60.dp, max = 100.dp),
                 contentAlignment = Alignment.CenterStart
             ) {
                 Text(
@@ -428,7 +443,7 @@ fun TransactionItemRow(
                 Text(
                     text = accountSubtitle,
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 11.5.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.Normal
                     ),
                     color = if (isSelected && !isThemeDark) Color(0xFF4B5563) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
@@ -452,10 +467,11 @@ fun TransactionItemRow(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = timeString,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                     color = if (isSelected && !isThemeDark) Color(0xFF6B7280) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
+        }
         }
     }
 }
@@ -558,7 +574,7 @@ fun MonthPickerDialog(
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,

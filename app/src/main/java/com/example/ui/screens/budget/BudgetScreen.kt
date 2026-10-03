@@ -46,6 +46,13 @@ fun BudgetScreen(
     val categories by viewModel.categories.collectAsStateWithLifecycle()
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
     val monthlyBudgetGoal by viewModel.monthlyBudgetGoal.collectAsStateWithLifecycle()
+    val loadedQueries by viewModel.loadedQueries.collectAsStateWithLifecycle()
+    val monthData by viewModel.monthPageData.collectAsStateWithLifecycle()
+    val monthError by viewModel.homeError.collectAsStateWithLifecycle()
+    if (monthError != null) { com.example.ui.components.ErrorContent(monthError!!) { viewModel.retryHome() }; return }
+    if (monthData == null || "budgets" !in loadedQueries || "categories" !in loadedQueries) {
+        com.example.ui.components.LoadingContent(); return
+    }
 
     val monthStr = remember(currentMonth) {
         SimpleDateFormat("yyyy-MM", Locale.US).format(currentMonth.time)

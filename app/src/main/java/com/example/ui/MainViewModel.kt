@@ -10,6 +10,10 @@ import com.example.domain.*
 import com.example.server.PCManagerServer
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.AppThemePalette
+import androidx.paging.cachedIn
+import androidx.room.withTransaction
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -45,10 +49,40 @@ data class TransactionFilterState(
     val endDateMillis: Long? = null
 )
 
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+class MainViewModel @JvmOverloads constructor(application: Application, private val databaseOverride: AppDatabase? = null) : AndroidViewModel(application) {
 
-    private val database = AppDatabase.getDatabase(application, viewModelScope)
-    val repository = FinanceRepository(database)
+    private val database = databaseOverride ?: AppDatabase.getDatabase(application, viewModelScope)
+    val repository = FinanceRepository(database, viewModelScope)
+
+    val loadedQueries = repository.loadedQueries
+    val readErrors = repository.readErrors
+    fun retryReads() { repository.retryReads(); retryHome() }
+
+    private val _transactionSaving = MutableStateFlow(false)
+    val transactionSaving = _transactionSaving.asStateFlow()
+
+    private val noticeChannel = Channel<UiNotice>(Channel.BUFFERED)
+    val notices = noticeChannel.receiveAsFlow()
+    private val _accountsLoaded = MutableStateFlow(false)
+    val accountsLoaded = _accountsLoaded.asStateFlow()
+    private val _homeError = MutableStateFlow<String?>(null)
+    val homeError = _homeError.asStateFlow()
+    private val refresh = MutableStateFlow(0)
+    fun retryHome() { refresh.value++ }
+
+    private fun launchMutation(onError: ((String) -> Unit)? = null, block: suspend () -> Unit) =
+        viewModelScope.launch(Dispatchers.IO) {
+            try { block() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                val message = if (error is IllegalArgumentException) error.message ?: "Check your input" else "Could not save the change. Please retry."
+                noticeChannel.send(UiNotice(message))
+                withContext(Dispatchers.Main) { onError?.invoke(message) }
+            }
+        }
+
+    fun accountPages(id: Long) = repository.accountPages(id).cachedIn(viewModelScope)
+    fun transaction(id: Long) = repository.withDetails(database.transactionDao().getTransactionByIdFlow(id))
 
     // Current Selected Month
     private val _currentMonth = MutableStateFlow(Calendar.getInstance())
@@ -84,8 +118,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
     val showAccountsTab = repository.getSettingFlow("show_accounts_tab")
-        .map { it == "true" }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        .map { it?.toBoolean() ?: true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val primaryCurrency = repository.getSettingFlow("primary_currency")
         .map { it ?: "INR" }
@@ -118,8 +152,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
 
     // All active accounts & categories
-    val accounts = repository.accounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val allAccounts = repository.allAccounts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val accounts = repository.accounts.onEach { _accountsLoaded.value = true }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val allAccounts = repository.allAccounts.onEach { _accountsLoaded.value = true }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val categories = repository.categories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val allCategories = repository.allCategories.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val allTransactionsWithDetails = repository.transactionsWithDetails.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -160,112 +194,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1234")
 
     // Prepare the home page once per data/month/filter change, outside composition.
-    val monthPageData: StateFlow<MonthPageData?> = combine(
-        allTransactionsWithDetails, _currentMonth, memos, _filterState
-    ) { transactions, month, memoList, filter ->
-        val monthKey = month.get(Calendar.YEAR) * 12 + month.get(Calendar.MONTH)
-        getMonthPageData(monthKey, transactions, memoList, filter)
-    }.flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-
-    // Month Filtered Transactions
-    val currentMonthTransactions = combine(
-        allTransactionsWithDetails,
-        _currentMonth,
-        _filterState
-    ) { allTx, monthCal, filter ->
-        val startCal = monthCal.clone() as Calendar
-        startCal.set(Calendar.DAY_OF_MONTH, 1)
-        startCal.set(Calendar.HOUR_OF_DAY, 0)
-        startCal.set(Calendar.MINUTE, 0)
-        startCal.set(Calendar.SECOND, 0)
-        startCal.set(Calendar.MILLISECOND, 0)
-
-        val endCal = monthCal.clone() as Calendar
-        endCal.set(Calendar.DAY_OF_MONTH, endCal.getActualMaximum(Calendar.DAY_OF_MONTH))
-        endCal.set(Calendar.HOUR_OF_DAY, 23)
-        endCal.set(Calendar.MINUTE, 59)
-        endCal.set(Calendar.SECOND, 59)
-        endCal.set(Calendar.MILLISECOND, 999)
-
-        val startMillis = filter.startDateMillis ?: startCal.timeInMillis
-        val endMillis = filter.endDateMillis ?: endCal.timeInMillis
-
-        allTx.filter { item ->
-            val tx = item.transaction
-            val withinDate = tx.dateMillis in startMillis..endMillis
-            val matchesType = filter.typeFilter == null || tx.type == filter.typeFilter
-            val matchesAccount = filter.accountIdFilter == null || tx.accountId == filter.accountIdFilter || tx.toAccountId == filter.accountIdFilter
-            val matchesCategory = filter.categoryIdFilter == null || tx.categoryId == filter.categoryIdFilter || tx.subcategoryId == filter.categoryIdFilter
-            val matchesSearch = filter.searchQuery.isBlank() ||
-                    tx.payee.contains(filter.searchQuery, ignoreCase = true) ||
-                    tx.note.contains(filter.searchQuery, ignoreCase = true) ||
-                    tx.tags.contains(filter.searchQuery, ignoreCase = true) ||
-                    (item.category?.name?.contains(filter.searchQuery, ignoreCase = true) == true) ||
-                    (item.account?.name?.contains(filter.searchQuery, ignoreCase = true) == true)
-            val matchesReceipt = !filter.onlyWithReceipt || tx.receiptUri != null
-
-            withinDate && matchesType && matchesAccount && matchesCategory && matchesSearch && matchesReceipt
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val monthPageData: StateFlow<MonthPageData?> = combine(_currentMonth, memos, _filterState, refresh) { month, memoList, filter, _ ->
+        Triple(month, memoList, filter)
+    }.flatMapLatest { (month, memoList, filter) ->
+        val start = (month.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         }
-    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        val end = (start.clone() as Calendar).apply { add(Calendar.MONTH, 1) }.timeInMillis - 1
+        val previousStart = (start.clone() as Calendar).apply { add(Calendar.MONTH, -1) }.timeInMillis
+        repository.transactionsBetween(minOf(previousStart, filter.startDateMillis ?: start.timeInMillis), maxOf(end, filter.endDateMillis ?: end))
+            .map<List<TransactionWithDetails>, MonthPageData?> { txs -> getMonthPageData(month.get(Calendar.YEAR) * 12 + month.get(Calendar.MONTH), txs, memoList, filter) }
+            .onStart { _homeError.value = null }
+            .catch { error -> _homeError.value = "Could not load transactions. Please retry."; emit(null) }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    // Month Period Summary
-    val monthPeriodSummary = combine(
-        allTransactionsWithDetails,
-        _currentMonth
-    ) { allTx, monthCal ->
-        val curStart = (monthCal.clone() as Calendar).apply {
-            set(Calendar.DAY_OF_MONTH, 1)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-        }.timeInMillis
+    val currentMonthTransactions = monthPageData.filterNotNull().map { it.transactions }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-        val curEnd = (monthCal.clone() as Calendar).apply {
-            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
-            set(Calendar.HOUR_OF_DAY, 23)
-            set(Calendar.MINUTE, 59)
-            set(Calendar.SECOND, 59)
-        }.timeInMillis
+    @OptIn(kotlinx.coroutines.FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val searchFilter = _filterState.debounce { if (it.searchQuery.isBlank()) 0L else 250L }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TransactionFilterState())
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val searchPages = searchFilter.flatMapLatest { repository.searchPages(it) }.cachedIn(viewModelScope)
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val searchTotals = searchFilter.flatMapLatest { repository.searchTotals(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SearchTotals())
 
-        val prevMonthCal = (monthCal.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
-        val prevStart = (prevMonthCal.clone() as Calendar).apply {
-            set(Calendar.DAY_OF_MONTH, 1)
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-        }.timeInMillis
-        val prevEnd = (prevMonthCal.clone() as Calendar).apply {
-            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
-            set(Calendar.HOUR_OF_DAY, 23)
-            set(Calendar.MINUTE, 59)
-            set(Calendar.SECOND, 59)
-        }.timeInMillis
-
-        val currentTxs = allTx.filter { it.transaction.dateMillis in curStart..curEnd }
-        val prevTxs = allTx.filter { it.transaction.dateMillis in prevStart..prevEnd }
-
-        FinancialEngine.calculatePeriodSummary(currentTxs, prevTxs)
-    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        PeriodSummary(0, 0, 0, 0f, 0)
-    )
-
-    // Daily Groups
-    val dailyGroups = combine(currentMonthTransactions, memos) { txs, memoList ->
-        FinancialEngine.groupDaily(txs, memoList)
-    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Weekly Groups
-    val weeklyGroups = currentMonthTransactions.map { txs ->
-        FinancialEngine.groupWeekly(txs)
-    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Monthly Historical Groups
-    val monthlyHistoricalGroups = allTransactionsWithDetails.map { txs ->
-        FinancialEngine.groupMonthly(txs)
-    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val monthPeriodSummary = monthPageData.filterNotNull().map { it.periodSummary }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PeriodSummary(0, 0, 0, 0f, 0))
+    val dailyGroups = monthPageData.filterNotNull().map { it.dailyGroups }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val weeklyGroups = monthPageData.filterNotNull().map { it.weeklyGroups }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val monthlyHistoricalGroups = repository.monthlyTotals.map { months ->
+        val parser = SimpleDateFormat("yyyy-MM", Locale.US)
+        val display = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+        months.mapIndexed { index, month ->
+            val balance = month.income - month.expense
+            val previous = months.getOrNull(index + 1)
+            MonthlyAggregation(month.monthString, display.format(parser.parse(month.monthString)!!),
+                month.income, month.expense, balance,
+                if (month.income > 0) balance.toFloat() / month.income * 100 else 0f,
+                balance - (previous?.let { it.income - it.expense } ?: balance), month.count)
+        }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Category Spending for current month
     val categorySpendings = currentMonthTransactions.map { txs ->
@@ -298,9 +272,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         FinancialEngine.calculateDayOfWeekDistribution(txs)
     }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val comparisonTransactions = _currentMonth.flatMapLatest { month ->
+        val first = (month.clone() as Calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1); set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0); add(Calendar.MONTH, -1)
+        }
+        val end = (first.clone() as Calendar).apply { add(Calendar.MONTH, 2) }.timeInMillis - 1
+        repository.transactionsBetween(first.timeInMillis, end)
+    }
+
     // Month over Month Category Comparison
     val monthOverMonthCategoryComparison = combine(
-        allTransactionsWithDetails,
+        comparisonTransactions,
         _currentMonth
     ) { allTx, monthCal ->
         val curStart = (monthCal.clone() as Calendar).apply {
@@ -308,6 +292,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }.timeInMillis
 
         val curEnd = (monthCal.clone() as Calendar).apply {
@@ -315,6 +300,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             set(Calendar.HOUR_OF_DAY, 23)
             set(Calendar.MINUTE, 59)
             set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
         }.timeInMillis
 
         val prevMonthCal = (monthCal.clone() as Calendar).apply { add(Calendar.MONTH, -1) }
@@ -323,12 +309,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
             set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }.timeInMillis
         val prevEnd = (prevMonthCal.clone() as Calendar).apply {
             set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
             set(Calendar.HOUR_OF_DAY, 23)
             set(Calendar.MINUTE, 59)
             set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
         }.timeInMillis
 
         val currentTxs = allTx.filter { it.transaction.dateMillis in curStart..curEnd }
@@ -411,10 +399,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     tx.note.contains(filter.searchQuery, ignoreCase = true) ||
                     tx.tags.contains(filter.searchQuery, ignoreCase = true) ||
                     (item.category?.name?.contains(filter.searchQuery, ignoreCase = true) == true) ||
+                    (item.subcategory?.name?.contains(filter.searchQuery, ignoreCase = true) == true) ||
                     (item.account?.name?.contains(filter.searchQuery, ignoreCase = true) == true)
             val matchesReceipt = !filter.onlyWithReceipt || tx.receiptUri != null
+            val matchesPayee = filter.payeeFilter.isBlank() || tx.payee.contains(filter.payeeFilter, ignoreCase = true)
+            val matchesTag = filter.tagFilter.isBlank() || tx.tags.contains(filter.tagFilter, ignoreCase = true)
 
-            withinDate && matchesType && matchesAccount && matchesCategory && matchesSearch && matchesReceipt
+            withinDate && matchesType && matchesAccount && matchesCategory && matchesSearch && matchesReceipt && matchesPayee && matchesTag
         }
 
         val dGroups = FinancialEngine.groupDaily(monthTxs, memoList)
@@ -489,15 +480,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteSelectedTransactions() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val ids = _selectedTransactionIds.value.toList()
+        val ids = _selectedTransactionIds.value.toList()
+        deleteWithUndo(ids)
+    }
+
+    private fun deleteWithUndo(ids: List<Long>) = launchMutation {
+        val deleted = database.withTransaction {
+            val rows = ids.chunked(500).flatMap { database.transactionDao().getByIds(it) }
             repository.deleteTransactionsByIds(ids)
-            _selectedTransactionIds.value = emptySet()
+            rows
         }
+        _selectedTransactionIds.value = emptySet()
+        if (deleted.isNotEmpty()) noticeChannel.send(UiNotice("${deleted.size} transaction(s) deleted", "Undo") {
+            launchMutation { database.withTransaction { deleted.chunked(500).forEach { database.transactionDao().restoreDeleted(it) } } }
+        })
     }
 
     fun bulkChangeCategory(categoryId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             val ids = _selectedTransactionIds.value.toList()
             repository.bulkUpdateCategory(ids, categoryId)
             _selectedTransactionIds.value = emptySet()
@@ -505,7 +505,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun bulkChangeAccount(accountId: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             val ids = _selectedTransactionIds.value.toList()
             repository.bulkUpdateAccount(ids, accountId)
             _selectedTransactionIds.value = emptySet()
@@ -513,7 +513,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun bulkChangeDate(dateMillis: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             val ids = _selectedTransactionIds.value.toList()
             repository.bulkUpdateDate(ids, dateMillis)
             _selectedTransactionIds.value = emptySet()
@@ -521,13 +521,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun bulkChangeNote(note: String, append: Boolean = false) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             val ids = _selectedTransactionIds.value.toList()
             if (append) {
-                val all = repository.database.transactionDao().getAllTransactionsSync()
-                all.filter { ids.contains(it.id) }.forEach { tx ->
+                database.withTransaction {
+                ids.chunked(500).flatMap { database.transactionDao().getByIds(it) }.forEach { tx ->
                     val newNote = if (tx.note.isBlank()) note else "${tx.note} | $note"
                     repository.updateTransaction(tx.copy(note = newNote))
+                }
                 }
             } else {
                 repository.bulkUpdateNote(ids, note)
@@ -537,7 +538,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun bulkChangePayee(payee: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             val ids = _selectedTransactionIds.value.toList()
             repository.bulkUpdatePayee(ids, payee)
             _selectedTransactionIds.value = emptySet()
@@ -562,9 +563,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         paymentMethod: PaymentMethod = PaymentMethod.CASH,
         isExcludedFromStats: Boolean = false,
         saveAsBookmark: Boolean = false,
-        onComplete: (() -> Unit)? = null
+        onComplete: (() -> Unit)? = null,
+        onError: ((String) -> Unit)? = null
     ) {
-        viewModelScope.launch(Dispatchers.IO) {
+        if (!_transactionSaving.compareAndSet(false, true)) return
+        launchMutation(onError) {
+            try {
+            database.withTransaction {
+            require(amount > 0 && transferFee >= 0) { "Enter a positive amount" }
+            require(database.accountDao().getAccountById(accountId) != null) { "Choose an account" }
+            require(type != TransactionType.TRANSFER || (toAccountId != null && toAccountId != accountId && database.accountDao().getAccountById(toAccountId) != null)) { "Choose a different destination account" }
+            val category = database.categoryDao().getCategoryById(categoryId)
+            require(type == TransactionType.TRANSFER || (category?.type == type && category.parentId == null)) { "Choose a category for this transaction type" }
+            require(subcategoryId == null || database.categoryDao().getCategoryById(subcategoryId)?.parentId == categoryId) { "Choose a valid subcategory" }
+            val prior = if (id != 0L) database.transactionDao().getTransactionById(id) else null
+            require(id == 0L || prior != null) { "This transaction was deleted" }
             val tx = TransactionEntity(
                 id = id,
                 type = type,
@@ -580,7 +593,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 tags = tags,
                 receiptUri = receiptUri,
                 paymentMethod = paymentMethod,
-                isExcludedFromStats = isExcludedFromStats
+                isExcludedFromStats = isExcludedFromStats,
+                recurringRuleId = prior?.recurringRuleId, installmentId = prior?.installmentId,
+                occurrenceKey = prior?.occurrenceKey
             )
             if (id == 0L) {
                 repository.insertTransaction(tx)
@@ -605,6 +620,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
 
+            }
+
             // Sync currentMonth if transaction was saved for a different month so it is visible immediately
             val txCal = Calendar.getInstance().apply { timeInMillis = dateMillis }
             val curCal = _currentMonth.value
@@ -622,18 +639,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.Main) {
                 onComplete?.invoke()
             }
+            } finally { _transactionSaving.value = false }
         }
     }
 
     fun deleteTransaction(item: TransactionEntity) {
-        viewModelScope.launch(Dispatchers.IO) {
-            repository.deleteTransaction(item)
-        }
+        deleteWithUndo(listOf(item.id))
     }
 
     // Account CRUD
     fun saveAccount(account: Account) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             if (account.id == 0L) {
                 repository.insertAccount(account)
             } else {
@@ -643,20 +659,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteAccount(account: Account) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.deleteAccount(account)
         }
     }
 
     fun toggleHideAccount(id: Long, hidden: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setAccountHidden(id, hidden)
         }
     }
 
     // Category CRUD
     fun saveCategory(category: Category) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             if (category.id == 0L) {
                 repository.insertCategory(category)
             } else {
@@ -666,89 +682,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteCategory(category: Category) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.deleteCategory(category)
         }
     }
 
     // Budget CRUD
     fun saveBudget(categoryId: Long, monthString: String, amount: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.insertBudget(Budget(categoryId = categoryId, monthString = monthString, amount = amount))
         }
     }
 
     fun deleteBudget(budget: Budget) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.deleteBudget(budget)
         }
     }
 
     // Recurring & Installments
     fun saveRecurring(recurring: RecurringTransaction) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             if (recurring.id == 0L) repository.insertRecurring(recurring) else repository.updateRecurring(recurring)
         }
     }
 
     fun deleteRecurring(recurring: RecurringTransaction) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.deleteRecurring(recurring)
         }
     }
 
     fun saveInstallment(plan: InstallmentPlan) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             if (plan.id == 0L) repository.insertInstallment(plan) else repository.updateInstallment(plan)
         }
     }
 
     fun deleteInstallment(plan: InstallmentPlan) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.deleteInstallment(plan)
         }
     }
 
     // Memos
     fun saveMemo(dateString: String, text: String, colorHex: String = "#10B981") {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.insertMemo(DailyMemo(dateString = dateString, memoText = text, colorHex = colorHex))
         }
     }
 
     fun deleteMemo(memo: DailyMemo) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.deleteMemo(memo)
         }
     }
 
     // Bookmarks
     fun deleteBookmark(bookmark: Bookmark) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.deleteBookmark(bookmark)
         }
     }
 
     fun setUserName(name: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("user_name", name)
         }
     }
 
     fun setFinancialGoal(goal: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("financial_goal", goal)
         }
     }
 
     fun setMonthlyBudgetGoal(amount: Long) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("monthly_budget_goal", amount.toString())
         }
     }
 
     fun setShowAccountsTab(enabled: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("show_accounts_tab", enabled.toString())
         }
     }
@@ -764,7 +780,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         goal: String,
         onComplete: () -> Unit = {}
     ) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
+            database.withTransaction {
             repository.setSetting("user_name", name)
             repository.setSetting("primary_currency", currency)
             repository.setSetting("currency_code", currency)
@@ -777,7 +794,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             // Insert / Replace customized accounts
             if (accounts.isNotEmpty()) {
-                val existingAccs = repository.database.accountDao().getAccountById(1L)
                 // If this is initial setup with default data, replace default accounts
                 val newAccounts = accounts.mapIndexed { index, item ->
                     val balanceMinor = CurrencyFormatter.parseToMinorUnits(item.initialBalanceText)
@@ -802,8 +818,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // If user customized during onboarding, clear and insert clean list
-                repository.database.accountDao().deleteAll()
-                repository.database.accountDao().insertAll(newAccounts)
+                val hasReferences = database.transactionDao().count() > 0 ||
+                    database.recurringDao().getAllRecurring().first().isNotEmpty() ||
+                    database.installmentDao().getAllInstallments().first().isNotEmpty() ||
+                    database.bookmarkDao().getAllBookmarks().first().isNotEmpty()
+                if (hasReferences) {
+                    val existing = database.accountDao().getAllAccounts().first()
+                    newAccounts.forEach { account ->
+                        val matching = existing.firstOrNull { it.name == account.name && it.type == account.type }
+                        if (matching == null) database.accountDao().insert(account)
+                        else database.accountDao().update(account.copy(id = matching.id))
+                    }
+                } else {
+                    database.accountDao().deleteAll()
+                    database.accountDao().insertAll(newAccounts)
+                }
             }
 
             // Configure category budgets if monthly budget requested
@@ -838,6 +867,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             repository.setSetting("onboarding_completed", "true")
+            }
             withContext(Dispatchers.Main) {
                 onComplete()
             }
@@ -845,13 +875,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restartOnboarding() {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("onboarding_completed", "false")
         }
     }
 
     fun skipOnboarding(onComplete: () -> Unit = {}) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("onboarding_completed", "true")
             withContext(Dispatchers.Main) {
                 onComplete()
@@ -861,7 +891,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Import / Restore actions
     fun importUniversalCsv(csvContent: String, onResult: (com.example.domain.ImportResult) -> Unit) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation(onError = { message -> onResult(ImportResult(false, 0, message = message)) }) {
             val curr = primaryCurrency.value
             val result = com.example.domain.BackupManager.importTransactionsUniversal(
                 database = database,
@@ -875,7 +905,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restoreDatabaseJson(jsonContent: String, onResult: (Boolean) -> Unit) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation(onError = { onResult(false) }) {
             val success = com.example.domain.BackupManager.restoreJsonBackup(database, jsonContent)
             withContext(Dispatchers.Main) {
                 onResult(success)
@@ -885,32 +915,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Settings
     fun setPrimaryCurrency(code: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
+            database.withTransaction {
             repository.setSetting("primary_currency", code)
             repository.setSetting("currency_code", code)
+            }
         }
     }
 
     fun setIndianNumberFormat(enabled: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("indian_number_format", enabled.toString())
         }
     }
 
     fun setThemePalette(palette: AppThemePalette) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("theme_palette", palette.id)
         }
     }
 
     fun setThemeMode(mode: AppThemeMode) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("theme_mode", mode.name)
         }
     }
 
     fun setAppPin(pin: String?) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("app_pin", pin ?: "")
         }
         _isAppUnlocked.value = true
@@ -928,7 +960,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // Data Actions
     fun seedDemoData(onComplete: () -> Unit = {}) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             DemoDataGenerator.seedComprehensiveDemoData(database)
             withContext(Dispatchers.Main) {
                 onComplete()
@@ -937,10 +969,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetAllData(onComplete: () -> Unit = {}) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
+            database.withTransaction {
             DemoDataGenerator.clearAllData(database)
             com.example.data.local.populateInitialDefaults(database)
             repository.setSetting("onboarding_completed", "true")
+            }
             withContext(Dispatchers.Main) {
                 onComplete()
             }
@@ -948,9 +982,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetTransactionsOnly(onComplete: () -> Unit = {}) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
+            database.withTransaction {
             database.transactionDao().deleteAll()
             database.memoDao().deleteAll()
+            }
             withContext(Dispatchers.Main) {
                 onComplete()
             }
@@ -959,6 +995,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // PC Manager Controller Functions
     fun startPcServer(context: android.content.Context) {
+        launchMutation {
         val passcodeOn = isPcPasscodeEnabled.value
         val code = pcPasscode.value
         val started = PCManagerServer.start(
@@ -980,31 +1017,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _pcServerPort.value = PCManagerServer.port
             _pcServerUrl.value = PCManagerServer.serverUrl
         }
+        }
     }
 
     fun stopPcServer() {
+        launchMutation {
         PCManagerServer.stop()
         _isPcServerRunning.value = false
         _pcServerUrl.value = ""
+        }
     }
 
     fun refreshPcIp(context: android.content.Context) {
+        launchMutation {
         val ip = PCManagerServer.refreshIp(context)
         _pcServerIp.value = ip
         if (_isPcServerRunning.value) {
             _pcServerUrl.value = "http://$ip:${_pcServerPort.value}"
         }
+        }
     }
 
     fun setPcPasscodeEnabled(enabled: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("pc_passcode_enabled", enabled.toString())
             PCManagerServer.updatePasscodeConfig(enabled, pcPasscode.value)
         }
     }
 
     fun setPcPasscode(code: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        launchMutation {
             repository.setSetting("pc_passcode", code)
             PCManagerServer.updatePasscodeConfig(isPcPasscodeEnabled.value, code)
         }
@@ -1012,8 +1054,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         // Run background recurring/installment check on launch
-        viewModelScope.launch(Dispatchers.IO) {
-            RecurringProcessor.processDueItems(database)
+        if (databaseOverride == null) launchMutation {
+            RecurringWorker.schedule(application)
         }
     }
 }

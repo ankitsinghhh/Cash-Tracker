@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.*
 import kotlinx.coroutines.CoroutineScope
@@ -22,8 +23,8 @@ import kotlinx.coroutines.launch
         Bookmark::class,
         AppSetting::class
     ],
-    version = 1,
-    exportSchema = false
+    version = 2,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
@@ -37,6 +38,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun settingDao(): SettingDao
 
     companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE transactions ADD COLUMN occurrenceKey TEXT")
+                db.execSQL("CREATE UNIQUE INDEX index_transactions_occurrenceKey ON transactions(occurrenceKey)")
+            }
+        }
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -47,7 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "money_manager_db"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_1_2)
                     .addCallback(DatabaseCallback(scope))
                     .build()
                 INSTANCE = instance
@@ -180,6 +187,7 @@ suspend fun populateInitialDefaults(db: AppDatabase) {
     db.accountDao().insertAll(defaultAccounts)
 
     // 3. Default Settings
+    db.settingDao().setSetting(AppSetting("show_accounts_tab", "true"))
     db.settingDao().setSetting(AppSetting("primary_currency", "INR"))
     db.settingDao().setSetting(AppSetting("currency_code", "INR"))
     db.settingDao().setSetting(AppSetting("indian_number_format", "true"))

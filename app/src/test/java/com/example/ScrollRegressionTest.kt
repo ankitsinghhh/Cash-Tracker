@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import com.example.data.model.TransactionEntity
 import com.example.data.model.TransactionType
 import com.example.data.model.TransactionWithDetails
@@ -27,7 +28,8 @@ import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(qualifiers = "w411dp-h891dp", sdk = [36])
+// UI simulations use Android 15; database and server regressions also cover Android 16.
+@Config(qualifiers = "w411dp-h891dp", sdk = [35])
 class ScrollRegressionTest {
     @get:Rule val compose = createComposeRule()
 
@@ -51,10 +53,13 @@ class ScrollRegressionTest {
             totalIncome = 0L, totalExpense = 50000L, balance = -50000L,
             transactionCount = transactions.size, transactions = transactions
         )
-        compose.setContent {
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
             MyApplicationTheme { WeeklyTabContent(listOf(week), "INR", {}) }
         }
         compose.onNodeWithText("Week 3").performClick()
+        compose.onNodeWithText("Transaction 0").assertIsDisplayed()
+        restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Transaction 0").assertIsDisplayed()
         compose.onNodeWithText("Transaction 499").assertDoesNotExist()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Transaction 499"))
