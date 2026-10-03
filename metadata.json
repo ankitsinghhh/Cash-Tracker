@@ -1,0 +1,6 @@
+{
+  "name": "Cash Tracker",
+  "description": "Comprehensive personal finance, expense tracking, budgeting, and asset management app Cash Tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
