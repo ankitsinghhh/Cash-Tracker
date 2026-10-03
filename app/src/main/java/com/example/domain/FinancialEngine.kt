@@ -9,10 +9,14 @@ import kotlin.math.roundToInt
 
 object FinancialEngine {
 
-    private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-    private val monthFormat = SimpleDateFormat("yyyy-MM", Locale.US)
-    private val monthDisplayFormat = SimpleDateFormat("MMMM yyyy", Locale.US)
-    private val shortMonthFormat = SimpleDateFormat("MMM yyyy", Locale.US)
+    // Analytics run concurrently on background dispatchers. SimpleDateFormat is mutable,
+    // so each worker needs its own formatter.
+    private val dateFormats = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
+    private val monthFormats = ThreadLocal.withInitial { SimpleDateFormat("yyyy-MM", Locale.US) }
+    private val monthDisplayFormats = ThreadLocal.withInitial { SimpleDateFormat("MMMM yyyy", Locale.US) }
+    private val dateFormat: SimpleDateFormat get() = dateFormats.get()!!
+    private val monthFormat: SimpleDateFormat get() = monthFormats.get()!!
+    private val monthDisplayFormat: SimpleDateFormat get() = monthDisplayFormats.get()!!
 
     fun calculateAccountBalances(
         accounts: List<Account>,

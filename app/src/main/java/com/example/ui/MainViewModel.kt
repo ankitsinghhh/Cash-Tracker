@@ -159,6 +159,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .map { it ?: "1234" }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "1234")
 
+    // Prepare the home page once per data/month/filter change, outside composition.
+    val monthPageData: StateFlow<MonthPageData?> = combine(
+        allTransactionsWithDetails, _currentMonth, memos, _filterState
+    ) { transactions, month, memoList, filter ->
+        val monthKey = month.get(Calendar.YEAR) * 12 + month.get(Calendar.MONTH)
+        getMonthPageData(monthKey, transactions, memoList, filter)
+    }.flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     // Month Filtered Transactions
     val currentMonthTransactions = combine(
         allTransactionsWithDetails,
@@ -198,7 +207,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             withinDate && matchesType && matchesAccount && matchesCategory && matchesSearch && matchesReceipt
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Month Period Summary
     val monthPeriodSummary = combine(
@@ -237,7 +246,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val prevTxs = allTx.filter { it.transaction.dateMillis in prevStart..prevEnd }
 
         FinancialEngine.calculatePeriodSummary(currentTxs, prevTxs)
-    }.stateIn(
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         PeriodSummary(0, 0, 0, 0f, 0)
@@ -246,31 +255,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Daily Groups
     val dailyGroups = combine(currentMonthTransactions, memos) { txs, memoList ->
         FinancialEngine.groupDaily(txs, memoList)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Weekly Groups
     val weeklyGroups = currentMonthTransactions.map { txs ->
         FinancialEngine.groupWeekly(txs)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Monthly Historical Groups
     val monthlyHistoricalGroups = allTransactionsWithDetails.map { txs ->
         FinancialEngine.groupMonthly(txs)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Category Spending for current month
     val categorySpendings = currentMonthTransactions.map { txs ->
         FinancialEngine.calculateCategorySpending(txs, TransactionType.EXPENSE)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val categoryIncomes = currentMonthTransactions.map { txs ->
         FinancialEngine.calculateCategorySpending(txs, TransactionType.INCOME)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Merchant Analytics
     val merchantStats = allTransactionsWithDetails.map { txs ->
         FinancialEngine.calculateMerchantAnalytics(txs)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Daily Spending Trend & Velocity (Time-Series)
     val dailySpendingTrend = combine(
@@ -278,7 +287,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _currentMonth
     ) { txs, monthCal ->
         FinancialEngine.calculateDailySpendingTrend(txs, monthCal)
-    }.stateIn(
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         DailySpendingTrendData(emptyList(), emptyList(), 0L, 1, 0L, 0, 0L)
@@ -287,7 +296,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Day of Week Spending Habit Distribution
     val dayOfWeekDistribution = currentMonthTransactions.map { txs ->
         FinancialEngine.calculateDayOfWeekDistribution(txs)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Month over Month Category Comparison
     val monthOverMonthCategoryComparison = combine(
@@ -326,7 +335,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val prevTxs = allTx.filter { it.transaction.dateMillis in prevStart..prevEnd }
 
         FinancialEngine.calculateMonthOverMonthCategoryComparison(currentTxs, prevTxs)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Budget Progress for current month
     val currentMonthBudgetsProgress = combine(
@@ -345,7 +354,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val totalDays = monthCal.getActualMaximum(Calendar.DAY_OF_MONTH)
 
         FinancialEngine.calculateBudgetProgressList(filteredBudgets, catList, txs, daysElapsed, totalDays)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.distinctUntilChanged().flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Navigation and Calendar Actions
     fun previousMonth() {

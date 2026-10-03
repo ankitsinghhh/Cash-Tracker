@@ -3,8 +3,11 @@ package com.example.data.repository
 import com.example.data.local.AppDatabase
 import com.example.data.model.*
 import com.example.domain.FinancialEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 class FinanceRepository(val database: AppDatabase) {
@@ -50,7 +53,7 @@ class FinanceRepository(val database: AppDatabase) {
                 subcategory = tx.subcategoryId?.let { catMap[it] }
             )
         }
-    }
+    }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
     // Calculated Account Balances with Real-Time Ledger integrity
     val accountBalances: Flow<List<AccountWithBalance>> = combine(
@@ -58,12 +61,12 @@ class FinanceRepository(val database: AppDatabase) {
         transactionDao.getAllTransactions()
     ) { accList, txList ->
         FinancialEngine.calculateAccountBalances(accList, txList)
-    }
+    }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
     // Calculated Net Worth Summary
     val netWorth: Flow<NetWorthSummary> = accountBalances.map { balances ->
         FinancialEngine.calculateNetWorth(balances)
-    }
+    }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
     // Database CRUD
     suspend fun insertTransaction(tx: TransactionEntity): Long = transactionDao.insert(tx)

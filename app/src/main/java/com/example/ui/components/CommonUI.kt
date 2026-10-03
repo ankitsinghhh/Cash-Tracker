@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.os.SystemClock
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,6 +59,12 @@ fun Modifier.horizontalSwipeListener(
             while (true) {
                 val event = awaitPointerEvent()
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                // A child scrollable has claimed this gesture. Never steal it
+                // or turn a cancelled drag into month navigation.
+                if (change.isConsumed || event.changes.count { it.pressed } > 1) {
+                    isHorizontalSwipe = false
+                    break
+                }
                 if (!change.pressed) break
 
                 val dragX = change.position.x - change.previousPosition.x
@@ -86,7 +93,7 @@ fun Modifier.horizontalSwipeListener(
             }
 
             if (isHorizontalSwipe == true) {
-                val now = System.currentTimeMillis()
+                val now = SystemClock.uptimeMillis()
                 if (now - lastTriggerTime >= cooldownMillis) {
                     if (totalDragX > thresholdPx) {
                         lastTriggerTime = now
@@ -291,7 +298,12 @@ fun TransactionItemRow(
     modifier: Modifier = Modifier
 ) {
     val tx = item.transaction
-    val timeString = rowTimeFormat.get()?.format(Date(tx.dateMillis)) ?: ""
+    val timeString = remember(tx.dateMillis) {
+        rowTimeFormat.get()?.format(Date(tx.dateMillis)) ?: ""
+    }
+    val formattedAmount = remember(tx.amount, currencyCode) {
+        CurrencyFormatter.formatAmount(tx.amount, currencyCode)
+    }
 
     val isTransfer = tx.type == TransactionType.TRANSFER
     val isIncome = tx.type == TransactionType.INCOME
@@ -430,7 +442,7 @@ fun TransactionItemRow(
             // Right Column: Amount & Time
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = "$amountPrefix ${CurrencyFormatter.formatAmount(tx.amount, currencyCode)}",
+                    text = "$amountPrefix $formattedAmount",
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp

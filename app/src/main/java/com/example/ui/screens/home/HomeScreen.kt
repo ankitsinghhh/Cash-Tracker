@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,18 +62,13 @@ fun HomeScreen(
     val financialGoal by viewModel.financialGoal.collectAsStateWithLifecycle()
     val currentMonth by viewModel.currentMonth.collectAsStateWithLifecycle()
     val homeSubTab by viewModel.homeSubTab.collectAsStateWithLifecycle()
-    val currentTransactions by viewModel.currentMonthTransactions.collectAsStateWithLifecycle()
-    val periodSummary by viewModel.monthPeriodSummary.collectAsStateWithLifecycle()
-    val dailyGroups by viewModel.dailyGroups.collectAsStateWithLifecycle()
-    val weeklyGroups by viewModel.weeklyGroups.collectAsStateWithLifecycle()
+    val preparedPageData by viewModel.monthPageData.collectAsStateWithLifecycle()
+    val currentTransactions = preparedPageData?.transactions.orEmpty()
     val monthlyGroups by viewModel.monthlyHistoricalGroups.collectAsStateWithLifecycle()
-    val categorySpendings by viewModel.categorySpendings.collectAsStateWithLifecycle()
     val accountBalances by viewModel.accountBalances.collectAsStateWithLifecycle()
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedTransactionIds.collectAsStateWithLifecycle()
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
-    val allTransactions by viewModel.allTransactionsWithDetails.collectAsStateWithLifecycle()
-    val memos by viewModel.memos.collectAsStateWithLifecycle()
 
     var showMonthPickerModal by remember { mutableStateOf(false) }
     var showBulkCategoryDialog by remember { mutableStateOf(false) }
@@ -88,10 +84,6 @@ fun HomeScreen(
             filterState.accountIdFilter != null ||
             filterState.categoryIdFilter != null ||
             filterState.onlyWithReceipt
-
-    val currentMonthKey = remember(currentMonth) {
-        currentMonth.get(Calendar.YEAR) * 12 + currentMonth.get(Calendar.MONTH)
-    }
 
     val selectedTransactions = remember(selectedIds, currentTransactions) {
         currentTransactions.filter { selectedIds.contains(it.transaction.id) }
@@ -186,7 +178,7 @@ fun HomeScreen(
                                             if (selectedIds.size == currentTransactions.size) {
                                                 viewModel.clearSelection()
                                             } else {
-                                                viewModel.selectAllVisible()
+                                                viewModel.selectAllTransactions(currentTransactions.map { it.transaction.id })
                                             }
                                         }
                                     )
@@ -402,14 +394,10 @@ fun HomeScreen(
 
                 // Period Summary Strip (Income, Expense, Balance)
                 // Kept directly below the sub tabs (or below the selection header in selection mode)
-                val currentMonthPageData = remember(currentMonthKey, allTransactions, memos, filterState) {
-                    viewModel.getMonthPageData(currentMonthKey, allTransactions, memos, filterState)
-                }
-
                 PeriodTotalsBar(
-                    totalIncome = currentMonthPageData.periodSummary.totalIncome,
-                    totalExpense = currentMonthPageData.periodSummary.totalExpense,
-                    balance = currentMonthPageData.periodSummary.netSavings,
+                    totalIncome = preparedPageData?.periodSummary?.totalIncome ?: 0L,
+                    totalExpense = preparedPageData?.periodSummary?.totalExpense ?: 0L,
+                    balance = preparedPageData?.periodSummary?.netSavings ?: 0L,
                     currencyCode = currencyCode,
                     modifier = Modifier
                         .background(MaterialTheme.colorScheme.surface)
@@ -456,9 +444,12 @@ fun HomeScreen(
                         )
                 ) {
                     AnimatedContent(
-                        targetState = currentMonthKey,
+                        targetState = preparedPageData,
+                        contentKey = { it?.monthCal?.let { month -> month.get(Calendar.YEAR) * 12 + month.get(Calendar.MONTH) } },
                         transitionSpec = {
-                            val direction = if (targetState > initialState) 1 else -1
+                            val initialMonth = initialState?.monthCal?.let { it.get(Calendar.YEAR) * 12 + it.get(Calendar.MONTH) } ?: 0
+                            val targetMonth = targetState?.monthCal?.let { it.get(Calendar.YEAR) * 12 + it.get(Calendar.MONTH) } ?: 0
+                            val direction = if (targetMonth > initialMonth) 1 else -1
                             (slideInHorizontally(animationSpec = tween(280, easing = FastOutSlowInEasing)) { width -> direction * width } +
                                 fadeIn(animationSpec = tween(220)))
                                 .togetherWith(
@@ -470,9 +461,12 @@ fun HomeScreen(
                         },
                         label = "MonthSlideAnimation",
                         modifier = Modifier.fillMaxSize()
-                    ) { targetMonthKey ->
-                        val pageData = remember(targetMonthKey, allTransactions, memos, filterState) {
-                            viewModel.getMonthPageData(targetMonthKey, allTransactions, memos, filterState)
+                    ) { pageData ->
+                        if (pageData == null) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator()
+                            }
+                            return@AnimatedContent
                         }
 
                         Crossfade(
@@ -782,7 +776,7 @@ fun DailyTabContent(
         contentPadding = PaddingValues(bottom = 88.dp)
     ) {
         dailyGroups.forEachIndexed { groupIndex, group ->
-            item(key = group.dateString) {
+            item(key = group.dateString, contentType = "day_header") {
                 val groupTxIds = if (selectedIds.isNotEmpty()) group.transactions.map { it.transaction.id } else emptyList()
                 val isAllDaySelected = selectedIds.isNotEmpty() && groupTxIds.isNotEmpty() && groupTxIds.all { selectedIds.contains(it) }
 
@@ -930,7 +924,7 @@ fun DailyTabContent(
                 }
             }
 
-            itemsIndexed(group.transactions, key = { _, it -> it.transaction.id }) { index, item ->
+            itemsIndexed(group.transactions, key = { _, it -> it.transaction.id }, contentType = { _, _ -> "transaction" }) { index, item ->
                 TransactionItemRow(
                     item = item,
                     currencyCode = currencyCode,
@@ -1402,7 +1396,7 @@ fun CalendarTabContent(
                 }
             }
         } else {
-            items(selectedDayTransactions, key = { it.transaction.id }) { item ->
+            items(selectedDayTransactions, key = { it.transaction.id }, contentType = { "transaction" }) { item ->
                 TransactionItemRow(
                     item = item,
                     currencyCode = currencyCode,
@@ -1444,74 +1438,85 @@ fun WeeklyTabContent(
         return
     }
 
+    var expandedWeeks by rememberSaveable { mutableStateOf(emptyList<Int>()) }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(bottom = 88.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        items(weeklyGroups, key = { it.label }) { week ->
-            var isExpanded by remember { mutableStateOf(false) }
+        weeklyGroups.forEach { week ->
+            val isExpanded = week.weekNumber in expandedWeeks
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                shape = RoundedCornerShape(16.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { isExpanded = !isExpanded },
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = week.label,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "${week.transactionCount} transactions",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(horizontalAlignment = Alignment.End) {
+            item(key = "week_${week.weekNumber}", contentType = "week_header") {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(16.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    expandedWeeks = if (isExpanded) expandedWeeks - week.weekNumber
+                                        else expandedWeeks + week.weekNumber
+                                },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
                                 Text(
-                                    text = "Net: ${CurrencyFormatter.formatAmount(week.balance, currencyCode)}",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (week.balance >= 0) IncomeGreen else ExpenseRed
+                                    text = week.label,
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
-                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Text("+${CurrencyFormatter.formatAmount(week.totalIncome, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = IncomeGreen)
-                                    Text("-${CurrencyFormatter.formatAmount(week.totalExpense, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = ExpenseRed)
-                                }
+                                Text(
+                                    text = "${week.transactionCount} transactions",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                contentDescription = null
-                            )
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "Net: ${CurrencyFormatter.formatAmount(week.balance, currencyCode)}",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = if (week.balance >= 0) IncomeGreen else ExpenseRed
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("+${CurrencyFormatter.formatAmount(week.totalIncome, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = IncomeGreen)
+                                        Text("-${CurrencyFormatter.formatAmount(week.totalExpense, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = ExpenseRed)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = null
+                                )
+                            }
                         }
                     }
+                }
+            }
 
-                    if (isExpanded) {
-                        Spacer(modifier = Modifier.height(10.dp))
-                        HorizontalDivider()
-                        Spacer(modifier = Modifier.height(8.dp))
-                        week.transactions.forEach { tx ->
-                            TransactionItemRow(
-                                item = tx,
-                                currencyCode = currencyCode,
-                                onClick = { onTransactionClick(tx) }
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
+            // Each expanded row is a lazy item, so a large week never composes
+            // its entire transaction history during a scroll or expansion.
+            if (isExpanded) {
+                items(week.transactions, key = { it.transaction.id }, contentType = { "transaction" }) { tx ->
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        TransactionItemRow(
+                            item = tx,
+                            currencyCode = currencyCode,
+                            onClick = { onTransactionClick(tx) }
+                        )
                     }
                 }
             }
