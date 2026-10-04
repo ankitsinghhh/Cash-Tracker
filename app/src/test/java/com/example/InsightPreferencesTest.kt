@@ -22,6 +22,35 @@ import java.nio.file.Files
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class InsightPreferencesTest {
+    @Test fun hapticChoicesAndBackupFolderSurviveReopeningDatabase() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val temporaryDirectory = Files.createTempDirectory("cash-touch-")
+        val name = temporaryDirectory.resolve("settings.db").toString()
+        var db = Room.databaseBuilder(app, AppDatabase::class.java, name).build()
+        var store = ViewModelStore()
+        try {
+            var model = MainViewModel(app, db)
+            store.put("test", model)
+            assertEquals(com.example.data.model.HapticPreferences(), withTimeout(10000) { model.hapticPreferences.first { it != null } })
+            model.setHapticsEnabled(false).join()
+            model.setHapticStrength(75).join()
+            model.repository.setSetting("csv_backup_folder_uri", "content://backups/tree/ledger")
+            model.repository.setSetting("csv_backup_folder_name", "Ledger backups")
+            withTimeout(10000) { model.hapticPreferences.first { it?.enabled == false && it.strength == 75 } }
+            store.clear(); db.close()
+            db = Room.databaseBuilder(app, AppDatabase::class.java, name).build()
+            store = ViewModelStore()
+            model = MainViewModel(app, db)
+            store.put("test", model)
+            assertEquals(com.example.data.model.HapticPreferences(false, 75), withTimeout(10000) { model.hapticPreferences.first { it != null } })
+            assertEquals(com.example.data.model.CsvBackupFolder("content://backups/tree/ledger", "Ledger backups"),
+                withTimeout(10000) { model.csvBackupFolder.first { it != null } })
+            model.setHapticsEnabled(true).join()
+            assertEquals(75, withTimeout(10000) { model.hapticPreferences.first { it?.enabled == true } }!!.strength)
+        } finally { store.clear(); db.close(); app.deleteDatabase(name); temporaryDirectory.toFile().delete(); Dispatchers.resetMain() }
+    }
+
     @Test fun bothSummaryStatesAndQuietStudioSurviveAppRestart() = runBlocking {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val app = ApplicationProvider.getApplicationContext<Application>()

@@ -161,6 +161,16 @@ class MainViewModel @JvmOverloads constructor(application: Application, private 
     val homeSummaryExpanded: StateFlow<Boolean?> = repository.getSettingFlow("home_summary_expanded")
         .map { it != "false" }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    val hapticPreferences: StateFlow<HapticPreferences?> = repository.settings.map { settings ->
+        HapticPreferences(settings["haptics_enabled"] != "false", settings["haptics_strength"]?.toIntOrNull()?.coerceIn(0, 100) ?: 50)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val csvBackupFolder: StateFlow<CsvBackupFolder?> = repository.settings.map { settings ->
+        settings["csv_backup_folder_uri"]?.takeIf { it.isNotBlank() }?.let { CsvBackupFolder(it, settings["csv_backup_folder_name"] ?: "Backup folder") }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    private val _csvBackupSaving = MutableStateFlow(false)
+    val csvBackupSaving = _csvBackupSaving.asStateFlow()
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val smallPurchaseThreshold = primaryCurrency.flatMapLatest { currency -> repository.getSettingFlow("small_purchase_threshold_$currency") }
         .map { it?.toLongOrNull()?.coerceIn(1L, 100_000_000_000L) ?: 20_000L }
@@ -204,6 +214,38 @@ class MainViewModel @JvmOverloads constructor(application: Application, private 
     fun setCalendarHeatmap(visible: Boolean) = launchMutation { repository.setSetting("calendar_heatmap", visible.toString()) }
     fun setHomeSummaryExpanded(expanded: Boolean) = launchMutation {
         repository.setSetting("home_summary_expanded", expanded.toString())
+    }
+    fun setHapticsEnabled(enabled: Boolean) = launchMutation { repository.setSetting("haptics_enabled", enabled.toString()) }
+    fun setHapticStrength(strength: Int) = launchMutation {
+        require(strength in 0..100) { "Choose a haptic strength from 0 to 100." }
+        repository.setSetting("haptics_strength", strength.toString())
+    }
+    fun selectCsvBackupFolder(uri: android.net.Uri) = launchMutation {
+        val folder = CsvFolderBackup.selectFolder(getApplication<Application>().contentResolver, uri)
+        database.withTransaction {
+            repository.setSetting("csv_backup_folder_uri", folder.uri)
+            repository.setSetting("csv_backup_folder_name", folder.name)
+        }
+    }
+    fun saveCsvToBackupFolder(onResult: (CsvBackupResult) -> Unit) {
+        if (!_csvBackupSaving.compareAndSet(false, true)) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val folderUri = database.settingDao().getValue("csv_backup_folder_uri")
+                    ?.takeIf { it.isNotBlank() } ?: throw IllegalArgumentException("Choose a CSV backup folder first.")
+                val folder = CsvBackupFolder(folderUri, database.settingDao().getValue("csv_backup_folder_name") ?: "Backup folder")
+                val currency = database.settingDao().getValue("primary_currency") ?: "INR"
+                val csv = BackupManager.exportTransactionsToCsv(database, repository.currentTransactionsWithDetails(), currency)
+                val result = CsvFolderBackup.save(getApplication<Application>().contentResolver, folder, csv)
+                withContext(Dispatchers.Main) { onResult(result) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                val message = if (error is SecurityException) "Backup folder access was lost. Choose the folder again."
+                    else error.message ?: "Could not save the CSV backup. Please try again."
+                noticeChannel.send(UiNotice(message))
+            } finally { _csvBackupSaving.value = false }
+        }
     }
     fun setSmallPurchaseThreshold(amount: Long) = launchMutation {
         require(amount in 1L..100_000_000_000L) { "Enter an amount greater than zero." }

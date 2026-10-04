@@ -18,6 +18,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.ui.MainAppNavigation
 import com.example.ui.MainViewModel
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.components.AppHapticProvider
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
       val viewModel: MainViewModel = viewModel()
       val themePalette by viewModel.themePalette.collectAsStateWithLifecycle()
       val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+      val hapticPreferences by viewModel.hapticPreferences.collectAsStateWithLifecycle()
 
       val lifecycleOwner = LocalLifecycleOwner.current
       DisposableEffect(lifecycleOwner) {
@@ -49,7 +51,7 @@ class MainActivity : ComponentActivity() {
           modifier = Modifier.fillMaxSize(),
           color = MaterialTheme.colorScheme.background
         ) {
-          MainAppNavigation(viewModel = viewModel)
+          AppHapticProvider(hapticPreferences) { MainAppNavigation(viewModel = viewModel) }
         }
       }
     }

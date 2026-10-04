@@ -120,7 +120,6 @@ fun StatsScreen(
                         onNextMonth = { viewModel.nextMonth() },
                         onMonthClick = { showMonthPicker = true }
                     )
-                    if (availableViews.isNotEmpty()) ChartFullscreenButton(sectionId)
                 }
 
                 // Stats Section Tabs

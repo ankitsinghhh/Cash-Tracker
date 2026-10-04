@@ -1,12 +1,5 @@
 package com.example.ui.components
 
-import android.content.Context
-import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
-import android.view.HapticFeedbackConstants
-import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -20,68 +13,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.CurrencyFormatter
 import java.text.DecimalFormat
-
-private fun triggerKeypadHaptic(view: View, haptic: HapticFeedback, context: Context) {
-    // 1. View haptics with flags to ensure physical responsiveness
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            view.performHapticFeedback(
-                HapticFeedbackConstants.KEYBOARD_PRESS,
-                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING or HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
-            )
-        } else {
-            view.performHapticFeedback(
-                HapticFeedbackConstants.KEYBOARD_TAP,
-                HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING or HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING
-            )
-        }
-    } catch (e: Exception) {
-        try {
-            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-        } catch (e2: Exception) {}
-    }
-
-    try {
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-    } catch (e: Exception) {}
-
-    // 2. Strong, punchy physical tactile pulse for high-feedback mechanical keypress feel
-    try {
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-            vm?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-        }
-        if (vibrator != null && vibrator.hasVibrator()) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                if (vibrator.hasAmplitudeControl()) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(42L, 255))
-                } else {
-                    vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_HEAVY_CLICK))
-                }
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                vibrator.vibrate(VibrationEffect.createOneShot(42L, VibrationEffect.DEFAULT_AMPLITUDE))
-            } else {
-                @Suppress("DEPRECATION")
-                vibrator.vibrate(42L)
-            }
-        }
-    } catch (e: Exception) {
-        // ignore
-    }
-}
 
 @Composable
 fun CalculatorKeypad(
@@ -92,9 +30,7 @@ fun CalculatorKeypad(
     currencyCode: String = "INR",
     modifier: Modifier = Modifier
 ) {
-    val view = LocalView.current
     val hapticFeedback = LocalHapticFeedback.current
-    val context = LocalContext.current
 
     var expression by remember(currentExpression) { mutableStateOf(currentExpression.ifBlank { "0" }) }
 
@@ -239,7 +175,7 @@ fun CalculatorKeypad(
                                 }
                             )
                             .clickable {
-                                triggerKeypadHaptic(view, hapticFeedback, context)
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 when (key) {
                                     "C" -> clear()
                                     "DEL" -> backspace()

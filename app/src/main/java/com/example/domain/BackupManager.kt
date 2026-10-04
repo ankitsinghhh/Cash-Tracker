@@ -179,7 +179,7 @@ object BackupManager {
         val sb = StringBuilder()
         // Prefix with UTF-8 BOM (\uFEFF)
         sb.append("\uFEFF")
-        sb.append("ID,Date,Type,Amount,Currency,Account,To Account,Category,Subcategory,Payee,Payment Method,Note,Tags\n")
+        sb.append("ID,Date,Type,Amount,Currency,Account,To Account,Category,Subcategory,Payee,Payment Method,Note,Tags,Transfer Fee\n")
 
         for (item in transactions) {
             val tx = item.transaction
@@ -194,7 +194,7 @@ object BackupManager {
             val tags = tx.tags.replace("\"", "\"\"")
             val itemCurrency = item.account?.currency?.takeIf { it.isNotBlank() } ?: resolvedCurrency
 
-            sb.append("${tx.id},\"$dateStr\",${tx.type},$amountFormatted,$itemCurrency,\"$accName\",\"$toAccName\",\"$catName\",\"$subName\",\"$payee\",${tx.paymentMethod.displayName},\"$note\",\"$tags\"\n")
+            sb.append("${tx.id},\"$dateStr\",${tx.type},$amountFormatted,$itemCurrency,\"$accName\",\"$toAccName\",\"$catName\",\"$subName\",\"$payee\",${tx.paymentMethod.displayName},\"$note\",\"$tags\",${CurrencyFormatter.toDecimalString(tx.transferFee)}\n")
         }
         return sb.toString()
     }

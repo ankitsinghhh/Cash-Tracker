@@ -122,4 +122,22 @@ class DataReliabilityTest {
             dateMillis = index.toLong(), amount = 100, accountId = index % 100L + 1, categoryId = 1) }
         assertEquals(-5000000L, FinancialEngine.calculateAccountBalances(accounts, transactions).sumOf { it.calculatedBalance })
     }
+
+    @Test fun csvSnapshotIncludesUnobservedRecordsAndPreservesTransferFeeAndQuotedNotes() = runBlocking {
+        defaults()
+        database.accountDao().insert(Account(id = 2, name = "Savings", type = AccountType.BANK))
+        database.transactionDao().insert(TransactionEntity(type = TransactionType.TRANSFER, dateMillis = 1705320000000L,
+            amount = 12345, accountId = 1, toAccountId = 2, categoryId = 0, transferFee = 125,
+            note = "A comma, a quote \" and a\nnewline"))
+        val repository = com.example.data.repository.FinanceRepository(database)
+        val csv = BackupManager.exportTransactionsToCsv(database, repository.currentTransactionsWithDetails())
+        assertTrue(csv.startsWith("\uFEFFID,Date"))
+        assertTrue(csv.contains("Transfer Fee"))
+        val imported = BackupManager.importTransactionsUniversal(database, csv)
+        assertTrue(imported.message, imported.success)
+        val copy = database.transactionDao().getAllTransactionsSync().maxBy { it.id }
+        assertEquals(12345L, copy.amount)
+        assertEquals(125L, copy.transferFee)
+        assertEquals("A comma, a quote \" and a\nnewline", copy.note)
+    }
 }

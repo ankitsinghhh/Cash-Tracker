@@ -34,6 +34,8 @@ import com.example.domain.BackupManager
 import com.example.domain.CurrencyFormatter
 import com.example.ui.MainViewModel
 import com.example.ui.components.ChartPreferencesDialog
+import com.example.ui.components.HapticFeedbackSettings
+import com.example.ui.components.CsvFolderBackupControls
 import com.example.data.model.InsightWidget
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.AppThemePalette
@@ -79,6 +81,9 @@ fun SettingsScreen(
     val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val visibleCharts by viewModel.visibleCharts.collectAsStateWithLifecycle()
     val calendarHeatmap by viewModel.calendarHeatmap.collectAsStateWithLifecycle()
+    val hapticPreferences by viewModel.hapticPreferences.collectAsStateWithLifecycle()
+    val csvBackupFolder by viewModel.csvBackupFolder.collectAsStateWithLifecycle()
+    val csvBackupSaving by viewModel.csvBackupSaving.collectAsStateWithLifecycle()
     var showChartsDialog by remember { mutableStateOf(false) }
 
     var showThemePaletteDialog by remember { mutableStateOf(false) }
@@ -95,6 +100,9 @@ fun SettingsScreen(
     var statusDialogData by remember { mutableStateOf<StatusDialogData?>(null) }
 
     // Direct Native File Launchers
+    val backupFolderLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) viewModel.selectCsvBackupFolder(uri)
+    }
     val importCsvFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -850,6 +858,10 @@ fun SettingsScreen(
 
             // Security Group
             item {
+                HapticFeedbackSettings(hapticPreferences, viewModel::setHapticsEnabled, viewModel::setHapticStrength)
+            }
+
+            item {
                 Text(
                     text = "Security",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -1027,16 +1039,27 @@ fun SettingsScreen(
                 ) {
                     Column {
                         // Export Excel / CSV File
+                        CsvFolderBackupControls(csvBackupFolder, csvBackupSaving,
+                            onChooseFolder = { backupFolderLauncher.launch(csvBackupFolder?.uri?.let(Uri::parse)) },
+                            onSave = {
+                                viewModel.saveCsvToBackupFolder { result ->
+                                    statusDialogData = StatusDialogData(
+                                        title = "CSV backup saved",
+                                        message = "Saved ${result.fileName} to ${result.folderName}.",
+                                        isSuccess = true
+                                    )
+                                }
+                            })
+                        HorizontalDivider()
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
                                     coroutineScope.launch {
-                                        val txs = viewModel.allTransactionsWithDetails.value
                                         val csv = withContext(Dispatchers.IO) {
                                             BackupManager.exportRealbyteCsv(
                                                 viewModel.repository.database,
-                                                txs,
+                                                viewModel.repository.currentTransactionsWithDetails(),
                                                 currencyCode
                                             )
                                         }
