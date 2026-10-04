@@ -2,7 +2,8 @@
 
 ## Where to find the additions
 
-- **Settings → Appearance & Themes → Quiet Studio** selects the new neutral/teal palette. It supports light, dark, system and AMOLED modes. All eight existing palettes, their IDs, their colour definitions and the saved selection remain available. The application does not switch your palette automatically.
+- **More (Settings) → Appearance & Themes → Color Palette Accent → Quiet Studio** selects the new neutral/teal palette. Tap Color Palette Accent and scroll through the palette chooser to Quiet Studio, or scroll the quick palette swatches horizontally. It supports light, dark, system and AMOLED modes. All eight existing palettes, their IDs, their colour definitions and the saved selection remain available. The application does not switch your palette automatically.
+- **Home → totals strip chevron** collapses or expands the compact Income / Expenses / Total strip. It defaults to expanded. Each choice persists in Room settings and is read before showing the strip on startup; changing month or Home tab does not reset it.
 - **Settings → Charts & insights → Visible charts** lets you show or hide each of the 19 chart/insight options. Changes persist in Room settings. Show all/Hide all write one database transaction. Newly introduced options default to visible without overwriting older choices.
 - **Settings → Charts & insights → Calendar heatmap overlay** independently controls shading in Home's Calendar tab. It defaults to off. The Stats heatmap has its own visibility choice.
 - **Stats → Insights** contains the eleven additions below. Existing Stats tabs remain available for their enabled charts. If all charts are hidden, a Choose charts action makes it possible to enable them again.
@@ -10,7 +11,7 @@
 
 ## Visual changes
 
-Home presents monthly spending as the main figure with income and net cash flow underneath, retaining decimal precision. Transaction rows show a softly tinted category icon, merchant/name hierarchy, category and account metadata, and aligned amounts with tabular digits. Notes remain visible in the metadata when a merchant name is present. Large text uses the existing stacked row layout.
+Home uses the original compact, equal-weight Income / Expenses / Total strip with whole-unit amounts and a collapse/expand control. The large monthly-spending highlight has been removed. Transaction rows use their earlier compact category-text / note-and-account / amount-and-time layout, including their original spacing and note-first ordering. A payee appears with the account when both note and payee are present. Large text retains the existing stacked row layout. Quiet Studio financial colours and selection styling remain available in both layouts.
 
 Typography, card shapes, margins and control spacing are more consistent across Accounts, Budget, transaction entry and charts. Loading states use static placeholders with a small activity indicator, and empty/error states use the same illustration treatment. Chart titles and labels compete less with the numbers. Financial colour changes, dark tonal layers and adjusted icon contrast are confined to Quiet Studio; existing palettes retain their financial colours.
 
@@ -60,6 +61,6 @@ Each chart card is a stable lazy item. Charts use small static canvases without 
 
 Regression tests cover calendar boundaries and daylight-saving time, comparable periods, transfers/fees, excluded records, mixed currencies, merchant matching, scheduled expense double counting, digest boundaries, future months, a 50,000-record insight ledger, saved preferences after reopening the database, interactive heatmap links and lazy scrolling to the digest. Desktop-rendered light/dark, heatmap and digest screenshots are written to `app/build/reports/visuals` with Roborazzi recording enabled.
 
-Local validation on 4 October 2026: all **42 JVM/Robolectric tests passed**, with zero failures, errors or skipped tests, including eight fullscreen regressions. Lint completed with **zero errors, 89 warnings and 16 hints**. Both the debug APK and R8/resource-shrunk `benchmarkRelease` APK built successfully. The light/dark, heatmap, digest and fullscreen portrait/landscape screenshots were rendered and visually reviewed. Tests were run in a fresh process with access to the Android test runtime, followed by a separate fresh lint/build run without disabling checks.
+Local validation on 4 October 2026: all **44 JVM/Robolectric tests passed**, with zero failures, errors or skipped tests, including eight fullscreen regressions, repeated summary collapse/expand, and database reopening with both summary states and Quiet Studio selected. Lint completed with **zero errors, 89 warnings and 16 hints**. Both the debug APK and R8/resource-shrunk `benchmarkRelease` APK built successfully. The restored compact light/dark Home layouts and collapsed strip were rendered and visually reviewed, alongside the existing chart previews. Tests were run in a fresh process with access to the Android test runtime, followed by a separate fresh lint/build run without disabling checks.
 
 Physical-device frame rates have not been measured for this change. No phone, ADB connection or installation was used for this validation.

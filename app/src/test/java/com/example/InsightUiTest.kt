@@ -3,6 +3,7 @@ package com.example
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -50,13 +51,45 @@ class InsightUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Monthly spending").assertIsDisplayed()
-        compose.onNodeWithText("Neighbourhood coffee").assertIsDisplayed()
+        compose.onNodeWithText("Income").assertIsDisplayed()
+        compose.onNodeWithText("Expenses").assertIsDisplayed()
+        compose.onNodeWithText("Total").assertIsDisplayed()
+        compose.onNodeWithText("Monthly spending").assertDoesNotExist()
+        compose.onNodeWithText("Lunch and groceries").assertIsDisplayed()
+        compose.onNodeWithText("Everyday wallet · Neighbourhood coffee").assertIsDisplayed()
         compose.onNodeWithText("Food & drinks").assertIsDisplayed()
         compose.onRoot().captureRoboImage("build/reports/visuals/studio-home-${mode.name.lowercase()}.png")
     }
     @Test fun studioLightSummaryAndRowsRemainReadable() = home(AppThemeMode.LIGHT)
     @Test fun studioDarkSummaryAndRowsRemainReadable() = home(AppThemeMode.DARK)
+
+    @Test fun periodTotalsCanBeRepeatedlyCollapsedAndExpanded() {
+        compose.setContent {
+            MyApplicationTheme {
+                var expanded by remember { mutableStateOf(true) }
+                Column {
+                    PeriodTotalsBar(1000000, 325050, 674950,
+                        expanded = expanded, onExpandedChange = { expanded = it })
+                    TransactionItemRow(record(1), onClick = {})
+                }
+            }
+        }
+        repeat(5) {
+            compose.onNodeWithContentDescription("Collapse period totals").performClick()
+            compose.onNodeWithText("Income").assertDoesNotExist()
+            compose.onNodeWithText("Expenses").assertDoesNotExist()
+            compose.onNodeWithText("Total").assertDoesNotExist()
+            compose.onNodeWithText("Period totals").assertIsDisplayed()
+            compose.onNodeWithText("Lunch and groceries").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Expand period totals").performClick()
+            compose.onNodeWithText("Income").assertIsDisplayed()
+            compose.onNodeWithText("Expenses").assertIsDisplayed()
+            compose.onNodeWithText("Total").assertIsDisplayed()
+            compose.onNodeWithText("Period totals").assertDoesNotExist()
+        }
+        compose.onNodeWithContentDescription("Collapse period totals").performClick()
+        compose.onRoot().captureRoboImage("build/reports/visuals/compact-home-collapsed.png")
+    }
 
     @Test fun heatmapIsInteractiveAndTransactionLinksWork() {
         var navigated = 0L

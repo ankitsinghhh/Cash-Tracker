@@ -22,6 +22,37 @@ import java.nio.file.Files
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class InsightPreferencesTest {
+    @Test fun bothSummaryStatesAndQuietStudioSurviveAppRestart() = runBlocking {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val temporaryDirectory = Files.createTempDirectory("cash-summary-")
+        val name = temporaryDirectory.resolve("settings.db").toString()
+        var db = Room.databaseBuilder(app, AppDatabase::class.java, name).build()
+        var store = ViewModelStore()
+        try {
+            var model = MainViewModel(app, db)
+            store.put("test", model)
+            assertTrue(withTimeout(10000) { model.homeSummaryExpanded.first { it != null } }!!)
+            model.setThemePalette(AppThemePalette.STUDIO)
+            withTimeout(10000) { model.themePalette.first { it == AppThemePalette.STUDIO } }
+            for (expanded in listOf(false, true, false)) {
+                model.setHomeSummaryExpanded(expanded).join()
+                withTimeout(10000) { model.homeSummaryExpanded.first { it == expanded } }
+                store.clear(); db.close()
+                db = Room.databaseBuilder(app, AppDatabase::class.java, name).build()
+                store = ViewModelStore()
+                model = MainViewModel(app, db)
+                store.put("test", model)
+                assertEquals(expanded, withTimeout(10000) { model.homeSummaryExpanded.first { it != null } })
+                assertEquals(AppThemePalette.STUDIO,
+                    withTimeout(10000) { model.themePalette.first { it == AppThemePalette.STUDIO } })
+            }
+        } finally {
+            store.clear(); db.close(); app.deleteDatabase(name)
+            temporaryDirectory.toFile().delete(); Dispatchers.resetMain()
+        }
+    }
+
     @Test fun chartChoicesHeatmapThresholdAndExistingThemeSurviveReopeningDatabase() = runBlocking {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         val app = ApplicationProvider.getApplicationContext<Application>()

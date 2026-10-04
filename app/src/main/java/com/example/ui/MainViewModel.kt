@@ -156,6 +156,11 @@ class MainViewModel @JvmOverloads constructor(application: Application, private 
     val calendarHeatmap = repository.getSettingFlow("calendar_heatmap")
         .map { it == "true" }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    // Wait for the saved choice before drawing the strip, so a collapsed preference
+    // never briefly shows expanded totals when the app starts.
+    val homeSummaryExpanded: StateFlow<Boolean?> = repository.getSettingFlow("home_summary_expanded")
+        .map { it != "false" }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val smallPurchaseThreshold = primaryCurrency.flatMapLatest { currency -> repository.getSettingFlow("small_purchase_threshold_$currency") }
         .map { it?.toLongOrNull()?.coerceIn(1L, 100_000_000_000L) ?: 20_000L }
@@ -197,6 +202,9 @@ class MainViewModel @JvmOverloads constructor(application: Application, private 
         database.withTransaction { InsightWidget.entries.forEach { repository.setSetting("chart_${it.name}", visible.toString()) } }
     }
     fun setCalendarHeatmap(visible: Boolean) = launchMutation { repository.setSetting("calendar_heatmap", visible.toString()) }
+    fun setHomeSummaryExpanded(expanded: Boolean) = launchMutation {
+        repository.setSetting("home_summary_expanded", expanded.toString())
+    }
     fun setSmallPurchaseThreshold(amount: Long) = launchMutation {
         require(amount in 1L..100_000_000_000L) { "Enter an amount greater than zero." }
         repository.setSetting("small_purchase_threshold_${primaryCurrency.value}", amount.toString())

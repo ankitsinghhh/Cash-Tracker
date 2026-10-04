@@ -71,6 +71,7 @@ fun HomeScreen(
     val accountBalances by (if (homeSubTab == HomeSubTab.TOTAL_SUMMARY) viewModel.accountBalances else kotlinx.coroutines.flow.flowOf(emptyList<AccountWithBalance>())).collectAsStateWithLifecycle(emptyList<AccountWithBalance>())
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
     val calendarHeatmap by viewModel.calendarHeatmap.collectAsStateWithLifecycle()
+    val summaryExpanded by viewModel.homeSummaryExpanded.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedTransactionIds.collectAsStateWithLifecycle()
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
 
@@ -399,15 +400,16 @@ fun HomeScreen(
 
                 // Period Summary Strip (Income, Expense, Balance)
                 // Kept directly below the sub tabs (or below the selection header in selection mode)
-                PeriodTotalsBar(
-                    totalIncome = preparedPageData?.periodSummary?.totalIncome ?: 0L,
-                    totalExpense = preparedPageData?.periodSummary?.totalExpense ?: 0L,
-                    balance = preparedPageData?.periodSummary?.netSavings ?: 0L,
-                    currencyCode = currencyCode,
-                    modifier = Modifier
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(horizontal = 12.dp, vertical = 2.dp)
-                )
+                summaryExpanded?.let { expanded ->
+                    PeriodTotalsBar(
+                        totalIncome = preparedPageData?.periodSummary?.totalIncome ?: 0L,
+                        totalExpense = preparedPageData?.periodSummary?.totalExpense ?: 0L,
+                        balance = preparedPageData?.periodSummary?.netSavings ?: 0L,
+                        currencyCode = currencyCode,
+                        expanded = expanded,
+                        onExpandedChange = viewModel::setHomeSummaryExpanded
+                    )
+                }
             }
         },
         floatingActionButton = {
