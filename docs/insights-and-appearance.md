@@ -6,6 +6,7 @@
 - **Settings → Charts & insights → Visible charts** lets you show or hide each of the 19 chart/insight options. Changes persist in Room settings. Show all/Hide all write one database transaction. Newly introduced options default to visible without overwriting older choices.
 - **Settings → Charts & insights → Calendar heatmap overlay** independently controls shading in Home's Calendar tab. It defaults to off. The Stats heatmap has its own visibility choice.
 - **Stats → Insights** contains the eleven additions below. Existing Stats tabs remain available for their enabled charts. If all charts are hidden, a Choose charts action makes it possible to enable them again.
+- **Stats → expand icon** opens the current section fullscreen. Individual donut, daily-trend, cash-flow, weekday and new insight cards also have an expand control. Close or Android Back returns to the inline view.
 
 ## Visual changes
 
@@ -43,12 +44,22 @@ Recurring trends require a recurring-rule/installment link on the posted transac
 
 ## Performance and verification
 
+### Fullscreen chart viewing
+
+Fullscreen is a single overlay in the existing app window. The same chart composition moves between its inline slot and the overlay, retaining selected points, chart modes, controls and effects. The inline slot keeps its measured height to prevent a lazy-list scroll jump. A stable saveable scope restores chart choices when Android recreates the screen while it is expanded. Opening a chart does not create another ViewModel subscription or query.
+
+Plots enlarge within bounded dimensions based on the actual app window, and long legends and details remain vertically scrollable. The title and close control stay above the scrolling content, with safe system-bar insets, portrait/landscape support, an Escape shortcut and Back handling. Keyboard focus moves to Close and returns to the expand control; background content is hidden from accessibility while expanded. Navigation to a different screen, removal of the selected chart, or the existing PIN gate dismisses the financial overlay.
+
+Fullscreen regression coverage exercises repeated opening/closing without effect duplication, preserved selection and list position, Back, saved-state restoration, removal of an open chart, nested section expansion, actual heatmap drilldown, and an interactive donut in landscape. Native desktop-rendered previews include `fullscreen-heatmap.png` and `fullscreen-donut-landscape.png` in `app/build/reports/visuals`.
+
+### Insight preparation
+
 Insight preparation runs on `Dispatchers.Default`, outside composition. SQL date bounds expand only for enabled insights: the selected month, previous month, six months, or at most the current and previous calendar year. The insight flow subscribes only while that Stats view is active; hiding all insights avoids the query. Chart preferences use one shared settings observer, including atomic bulk changes.
 
 Each chart card is a stable lazy item. Charts use small static canvases without continuous animation. Daily drilldowns contain at most five records; spikes at most five days; merchant plots at most ten merchants. Category reduction chips show six choices, with a lazy chooser for remaining categories. Historical plotting data is aggregated before the UI receives it.
 
 Regression tests cover calendar boundaries and daylight-saving time, comparable periods, transfers/fees, excluded records, mixed currencies, merchant matching, scheduled expense double counting, digest boundaries, future months, a 50,000-record insight ledger, saved preferences after reopening the database, interactive heatmap links and lazy scrolling to the digest. Desktop-rendered light/dark, heatmap and digest screenshots are written to `app/build/reports/visuals` with Roborazzi recording enabled.
 
-Local validation on 4 October 2026: all **34 JVM/Robolectric tests passed**, with zero failures, errors or skipped tests. Lint completed with **zero errors, 89 warnings and 16 hints**. Both the debug APK and R8/resource-shrunk `benchmarkRelease` APK built successfully. The light/dark, heatmap and digest screenshots were rendered and visually reviewed. An initial native SQLite test-path failure on Windows was corrected by using a short temporary database path; a lint analyzer crash was resolved by a fresh analysis run without disabling checks.
+Local validation on 4 October 2026: all **42 JVM/Robolectric tests passed**, with zero failures, errors or skipped tests, including eight fullscreen regressions. Lint completed with **zero errors, 89 warnings and 16 hints**. Both the debug APK and R8/resource-shrunk `benchmarkRelease` APK built successfully. The light/dark, heatmap, digest and fullscreen portrait/landscape screenshots were rendered and visually reviewed. Tests were run in a fresh process with access to the Android test runtime, followed by a separate fresh lint/build run without disabling checks.
 
 Physical-device frame rates have not been measured for this change. No phone, ADB connection or installation was used for this validation.

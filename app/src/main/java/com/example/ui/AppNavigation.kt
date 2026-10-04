@@ -125,6 +125,7 @@ fun MainAppNavigation(
 
     val isBottomBarVisible = currentNavItems.any { it.route == currentRoute } || currentRoute == "about"
 
+    com.example.ui.components.FullscreenChartHost(screenKey = currentRoute) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         modifier = modifier.fillMaxSize().semantics { testTagsAsResourceId = true },
@@ -459,5 +460,6 @@ fun MainAppNavigation(
                 confirmButton = { TextButton(onClick = viewModel::retryReads) { Text("Retry") } }
             )
         }
+    }
     }
 }

@@ -85,6 +85,16 @@ fun StatsScreen(
     val categoryMaximum = remember(activeCategoryItems) { activeCategoryItems.maxOfOrNull { it.totalAmount } ?: 1L }
     val comparisonMaximum = remember(categoryComparisons) { categoryComparisons.maxOfOrNull { maxOf(it.currentMonthAmount, it.previousMonthAmount) } ?: 1L }
     val totalAmount = if (selectedTransactionType == TransactionType.EXPENSE) periodSummary.totalExpense else periodSummary.totalIncome
+    val periodLabel = remember(currentMonth) { java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.getDefault()).format(currentMonth.time) }
+    val sectionId = "stats_${currentMonth.get(java.util.Calendar.YEAR)}_${currentMonth.get(java.util.Calendar.MONTH)}_${currencyCode}_${selectedViewType.name}"
+    val sectionTitle = when (selectedViewType) {
+        StatsViewType.CATEGORY_BREAKDOWN -> "Categories"
+        StatsViewType.SPENDING_TREND -> "Daily trend"
+        StatsViewType.PERIOD_COMPARISON -> "Comparison"
+        StatsViewType.CASH_FLOW_TREND -> "Cash flow"
+        StatsViewType.MERCHANT_ANALYTICS -> "Merchants"
+        StatsViewType.INSIGHTS -> "Insights"
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -110,15 +120,7 @@ fun StatsScreen(
                         onNextMonth = { viewModel.nextMonth() },
                         onMonthClick = { showMonthPicker = true }
                     )
-                    Text(
-                        text = "Stats",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 17.sp
-                        ),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(end = 6.dp)
-                    )
+                    if (availableViews.isNotEmpty()) ChartFullscreenButton(sectionId)
                 }
 
                 // Stats Section Tabs
@@ -154,11 +156,12 @@ fun StatsScreen(
             }
         }
     ) { innerPadding ->
+        FullscreenableChart(sectionId, "$sectionTitle · $periodLabel", modifier = Modifier.fillMaxSize(), scrollInFullscreen = false, showButton = false) {
         savedViews.SaveableStateProvider("${currentMonth.get(java.util.Calendar.YEAR)}-${currentMonth.get(java.util.Calendar.MONTH)}-${selectedViewType.name}") {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(if (LocalChartFullscreen.current) PaddingValues(0.dp) else innerPadding),
             contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
@@ -219,12 +222,14 @@ fun StatsScreen(
                     } else {
                         // Donut Chart
                         if (InsightWidget.CATEGORY_DONUT in visibleCharts) item {
+                            FullscreenableChart("donut_${sectionId}_${selectedTransactionType.name}", "${selectedTransactionType.name.lowercase().replaceFirstChar { it.uppercase() }} categories · $periodLabel") {
                             DonutPieChart(
                                 items = activeCategoryItems,
                                 totalAmount = totalAmount,
                                 currencyCode = currencyCode,
                                 onCategorySelected = { selectedDrilldownCategory = it }
                             )
+                            }
                         }
 
                         // Ranked Category Horizontal Bars with drilldown
@@ -294,19 +299,23 @@ fun StatsScreen(
                         }
                     } else {
                         item {
+                            FullscreenableChart("trend_$sectionId", "Daily trend · $periodLabel") {
                             DailySpendingTrendChart(
                                 data = dailyTrendData,
                                 currencyCode = currencyCode,
                                 showDaily = InsightWidget.DAILY_TREND in visibleCharts,
                                 showCumulative = InsightWidget.CUMULATIVE_PACE in visibleCharts
                             )
+                            }
                         }
                     }
                 }
 
                 StatsViewType.CASH_FLOW_TREND -> {
                     item {
+                        FullscreenableChart("cash_flow_$sectionId", "Cash flow · $currencyCode") {
                         MonthlyBarChart(monthlyData = monthlyGroups, currencyCode = currencyCode)
+                        }
                     }
 
                     item {
@@ -517,14 +526,17 @@ fun StatsScreen(
 
                     if (InsightWidget.WEEKDAY in visibleCharts && dayOfWeekHabits.isNotEmpty() && dayOfWeekHabits.any { it.totalExpense > 0L }) {
                         item {
+                            FullscreenableChart("weekday_$sectionId", "Weekday habits · $periodLabel") {
                             DayOfWeekHabitsChart(
                                 habits = dayOfWeekHabits,
                                 currencyCode = currencyCode
                             )
+                            }
                         }
                     }
                 }
             }
+        }
         }
         }
     }

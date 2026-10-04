@@ -32,6 +32,9 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.*
 import com.example.domain.CurrencyFormatter
 import com.example.ui.components.EmptyStateView
+import com.example.ui.components.FullscreenableChart
+import com.example.ui.components.ChartFullscreenButton
+import com.example.ui.components.chartPlotHeight
 import com.example.ui.theme.FinancialColors
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -55,6 +58,7 @@ fun LazyListScope.expenseInsightItems(data: ExpenseInsights, visible: Set<Insigh
         }
     }
     items(InsightWidget.entries.filter { it.isNew && it in visible }, key = { it.name }, contentType = { "insight" }) { widget ->
+        FullscreenableChart("insight_${data.monthStartMillis}_${data.currency}_${widget.name}", "${widget.title} · ${data.monthLabel}", showButton = false) {
         when (widget) {
             InsightWidget.HEATMAP -> SpendingHeatmap(data, onTransaction)
             InsightWidget.CATEGORY_TRENDS -> CategoryTrends(data)
@@ -69,6 +73,7 @@ fun LazyListScope.expenseInsightItems(data: ExpenseInsights, visible: Set<Insigh
             InsightWidget.WEEKLY_DIGEST -> WeeklyDigest(data, onTransaction)
             else -> Unit
         }
+        }
     }
 }
 
@@ -78,9 +83,12 @@ private fun InsightCard(title: String, subtitle: String, content: @Composable Co
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleLarge)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            ChartFullscreenButton()
             }
             content()
         }
@@ -191,7 +199,7 @@ private fun StackedBars(rows: List<BarDatum>, series: List<String>, currency: St
     val max = rows.maxOf { it.values.sum() }.coerceAtLeast(1L)
     val grid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
     Text(money(max, currency), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Canvas(Modifier.fillMaxWidth().height(150.dp).semantics {
+    Canvas(Modifier.fillMaxWidth().height(chartPlotHeight(150.dp)).semantics {
         contentDescription = "Stacked bar chart. ${rows[index].label}: ${money(rows[index].values.sum(), currency)}"
         onClick("Next month") { selected = (index + 1) % rows.size; true }
     }.pointerInput(rows) { detectTapGestures { selected = (it.x / size.width * rows.size).toInt().coerceIn(rows.indices) } }) {
@@ -257,7 +265,7 @@ private fun SpendingChange(data: ExpenseInsights) {
         Text("Previous: ${money(previous, data.currency)} · Selected: ${money(current, data.currency)}", style = MaterialTheme.typography.bodySmall)
         if (previous == 0L) Text("No previous-period spending is recorded; a percentage change would be misleading.", style = MaterialTheme.typography.bodySmall)
         if (data.drivers.isEmpty()) Text("Add expenses to see which categories changed.", style = MaterialTheme.typography.bodyMedium) else {
-            Canvas(Modifier.fillMaxWidth().height(160.dp).semantics { contentDescription = "Spending change waterfall, ${signedMoney(delta, data.currency)}" }) {
+            Canvas(Modifier.fillMaxWidth().height(chartPlotHeight(160.dp)).semantics { contentDescription = "Spending change waterfall, ${signedMoney(delta, data.currency)}" }) {
                 val slot = size.width / levels.size
                 repeat(3) { drawLine(grid, Offset(0f, size.height * it / 2), Offset(size.width, size.height * it / 2), 1.dp.toPx()) }
                 levels.forEachIndexed { index, (_, from, to) ->
@@ -332,7 +340,7 @@ private fun HabitPlot(points: List<BubbleDatum>, currency: String) {
     fun x(point: BubbleDatum, width: Float) = 24f + (width - 48f) * point.count / maxCount
     fun y(point: BubbleDatum, height: Float) = height - 24f - (height - 48f) * (point.average.toDouble() / maxAverage).toFloat()
     Text("Average purchase · up to ${money(maxAverage, currency)}", style = MaterialTheme.typography.bodySmall)
-    Canvas(Modifier.fillMaxWidth().height(180.dp).semantics {
+    Canvas(Modifier.fillMaxWidth().height(chartPlotHeight(180.dp)).semantics {
         contentDescription = "Purchase pattern chart. ${points[selected].label}, ${points[selected].count} purchases, average ${money(points[selected].average, currency)}"
         onClick("Next point") { selection = (selected + 1) % points.size; true }
     }.pointerInput(points) { detectTapGestures { tap ->
@@ -397,7 +405,7 @@ private fun Seasonality(data: ExpenseInsights) {
             Text("Records from at least two calendar years are needed for a seasonal comparison.", style = MaterialTheme.typography.bodyMedium)
         } else {
             Text(money(maximum, data.currency), style = MaterialTheme.typography.bodySmall)
-            Canvas(Modifier.fillMaxWidth().height(160.dp).semantics {
+            Canvas(Modifier.fillMaxWidth().height(chartPlotHeight(160.dp)).semantics {
                 contentDescription = "Annual seasonality chart, ${years.joinToString()}"
                 onClick("Next month") { selectedMonth = (selectedMonth + 1) % 12; true }
             }.pointerInput(data) { detectTapGestures { selectedMonth = (it.x / size.width * 12).toInt().coerceIn(0, 11) } }) {

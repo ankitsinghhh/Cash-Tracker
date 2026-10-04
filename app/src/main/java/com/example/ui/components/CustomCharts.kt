@@ -58,7 +58,7 @@ fun DonutPieChart(
     modifier: Modifier = Modifier,
     onCategorySelected: (CategorySpending) -> Unit = {}
 ) {
-    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+    var selectedIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     val animatedProgress = remember { Animatable(1f) }
 
     LaunchedEffect(items.map { it.category.id }) { animatedProgress.animateTo(1f, animationSpec = tween(200)) }
@@ -70,7 +70,7 @@ fun DonutPieChart(
     Column(modifier = modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .size(240.dp)
+                .size(chartDonutSize())
                 .padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
@@ -255,6 +255,7 @@ fun MonthlyBarChart(
         val maxExp = displayList.maxOfOrNull { it.totalExpense } ?: 1L
         max(1L, max(maxInc, maxExp))
     }
+    val barHeight = chartPlotHeight(110.dp)
 
     Card(
         modifier = modifier
@@ -294,7 +295,7 @@ fun MonthlyBarChart(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(140.dp),
+                    .height(barHeight + 30.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.Bottom
             ) {
@@ -309,7 +310,7 @@ fun MonthlyBarChart(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(110.dp),
+                                .height(barHeight),
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.Bottom
                         ) {
@@ -363,7 +364,7 @@ fun DailySpendingTrendChart(
 
     var requestedMode by rememberSaveable { mutableStateOf(TrendChartMode.DAILY_BARS) }
     val chartMode = if (!showDaily) TrendChartMode.CUMULATIVE_PACE else if (!showCumulative) TrendChartMode.DAILY_BARS else requestedMode
-    var selectedPointIndex by remember { mutableStateOf<Int?>(null) }
+    var selectedPointIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     val animatedProgress = remember { Animatable(1f) }
 
     LaunchedEffect(chartMode) { animatedProgress.animateTo(1f, animationSpec = tween(200)) }
@@ -556,7 +557,7 @@ fun DailySpendingTrendChart(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(170.dp)
+                    .height(chartPlotHeight(170.dp))
             ) {
                 Canvas(
                     modifier = Modifier
@@ -798,7 +799,7 @@ fun RankedCategoryBarChart(
 ) {
     if (items.isEmpty()) return
 
-    var expandedCategoryId by remember { mutableStateOf<Long?>(null) }
+    var expandedCategoryId by rememberSaveable { mutableStateOf<Long?>(null) }
     val maxAmount = remember(items, maximumAmount) { (maximumAmount ?: items.maxOfOrNull { it.totalAmount } ?: 1L).coerceAtLeast(1L) }
 
     Card(
@@ -1125,6 +1126,7 @@ fun DayOfWeekHabitsChart(
     }
 
     val peakDay = remember(habits) { habits.find { it.isPeakDay } }
+    val weekdayBarHeight = chartPlotHeight(90.dp)
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -1171,7 +1173,7 @@ fun DayOfWeekHabitsChart(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(130.dp),
+                    .height(weekdayBarHeight + 40.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.Bottom
             ) {
@@ -1194,7 +1196,7 @@ fun DayOfWeekHabitsChart(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(0.55f)
-                                .height(90.dp),
+                                .height(weekdayBarHeight),
                             contentAlignment = Alignment.BottomCenter
                         ) {
                             Box(
