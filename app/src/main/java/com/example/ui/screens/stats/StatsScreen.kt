@@ -32,7 +32,17 @@ enum class StatsViewType {
     SPENDING_TREND,
     PERIOD_COMPARISON,
     CASH_FLOW_TREND,
-    MERCHANT_ANALYTICS
+    MERCHANT_ANALYTICS,
+    INSIGHTS
+}
+
+private fun chartsForView(view: StatsViewType): Set<InsightWidget> = when (view) {
+    StatsViewType.CATEGORY_BREAKDOWN -> setOf(InsightWidget.CATEGORY_DONUT, InsightWidget.CATEGORY_RANKING)
+    StatsViewType.SPENDING_TREND -> setOf(InsightWidget.DAILY_TREND, InsightWidget.CUMULATIVE_PACE)
+    StatsViewType.PERIOD_COMPARISON -> setOf(InsightWidget.CATEGORY_COMPARISON, InsightWidget.WEEKDAY)
+    StatsViewType.CASH_FLOW_TREND -> setOf(InsightWidget.CASH_FLOW)
+    StatsViewType.MERCHANT_ANALYTICS -> setOf(InsightWidget.MERCHANT_RANKING)
+    StatsViewType.INSIGHTS -> InsightWidget.entries.filter { it.isNew }.toSet()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,7 +52,15 @@ fun StatsScreen(
     onNavigateToTransaction: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedViewType by rememberSaveable { mutableStateOf(StatsViewType.CATEGORY_BREAKDOWN) }
+    var requestedViewType by rememberSaveable { mutableStateOf(StatsViewType.CATEGORY_BREAKDOWN) }
+    val visibleCharts by viewModel.visibleCharts.collectAsStateWithLifecycle()
+    val availableViews = remember(visibleCharts) { StatsViewType.entries.filter { chartsForView(it).any(visibleCharts::contains) } }
+    val selectedViewType = requestedViewType.takeIf { it in availableViews } ?: availableViews.firstOrNull() ?: StatsViewType.INSIGHTS
+    var showChartsDialog by rememberSaveable { mutableStateOf(false) }
+    val insights by (if (selectedViewType == StatsViewType.INSIGHTS && availableViews.isNotEmpty()) viewModel.expenseInsights else kotlinx.coroutines.flow.flowOf(null)).collectAsStateWithLifecycle(null)
+    val insightsError by viewModel.insightsError.collectAsStateWithLifecycle()
+    val readErrors by viewModel.readErrors.collectAsStateWithLifecycle()
+    val insightReadError = insightsError ?: listOf("allAccounts", "allCategories", "settings").firstNotNullOfOrNull { readErrors[it] }
     val savedViews = rememberSaveableStateHolder()
     val currentMonth by viewModel.currentMonth.collectAsStateWithLifecycle()
     val periodSummary by viewModel.monthPeriodSummary.collectAsStateWithLifecycle()
@@ -64,6 +82,8 @@ fun StatsScreen(
     var showMonthPicker by remember { mutableStateOf(false) }
 
     val activeCategoryItems = if (selectedTransactionType == TransactionType.EXPENSE) categorySpendings else categoryIncomes
+    val categoryMaximum = remember(activeCategoryItems) { activeCategoryItems.maxOfOrNull { it.totalAmount } ?: 1L }
+    val comparisonMaximum = remember(categoryComparisons) { categoryComparisons.maxOfOrNull { maxOf(it.currentMonthAmount, it.previousMonthAmount) } ?: 1L }
     val totalAmount = if (selectedTransactionType == TransactionType.EXPENSE) periodSummary.totalExpense else periodSummary.totalIncome
 
     Scaffold(
@@ -102,17 +122,17 @@ fun StatsScreen(
                 }
 
                 // Stats Section Tabs
-                ScrollableTabRow(
-                    selectedTabIndex = selectedViewType.ordinal,
+                if (availableViews.isNotEmpty()) ScrollableTabRow(
+                    selectedTabIndex = availableViews.indexOf(selectedViewType),
                     edgePadding = 12.dp,
                     containerColor = MaterialTheme.colorScheme.surface,
                     divider = {}
                 ) {
-                    StatsViewType.values().forEach { viewType ->
+                    availableViews.forEach { viewType ->
                         Tab(
                             selected = selectedViewType == viewType,
                             onClick = {
-                                selectedViewType = viewType
+                                requestedViewType = viewType
                                 selectedDrilldownCategory = null
                             },
                             text = {
@@ -123,6 +143,7 @@ fun StatsScreen(
                                         StatsViewType.PERIOD_COMPARISON -> "Comparison"
                                         StatsViewType.CASH_FLOW_TREND -> "Cash Flow"
                                         StatsViewType.MERCHANT_ANALYTICS -> "Merchants"
+                                        StatsViewType.INSIGHTS -> "Insights"
                                     },
                                     fontWeight = if (selectedViewType == viewType) FontWeight.Bold else FontWeight.Normal
                                 )
@@ -138,10 +159,21 @@ fun StatsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(start = 12.dp, top = 4.dp, end = 12.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (availableViews.isEmpty()) {
+                item { EmptyStateView("Your charts are hidden", "Choose the charts you want to see.",
+                    actionButton = { Button(onClick = { showChartsDialog = true }) { Text("Choose charts") } }) }
+            } else
             when (selectedViewType) {
+                StatsViewType.INSIGHTS -> {
+                    when {
+                        insightReadError != null -> item { ErrorContent(insightReadError) { viewModel.retryReads() } }
+                        insights == null -> item { LoadingContent("Preparing your insights…") }
+                        else -> expenseInsightItems(insights!!, visibleCharts, viewModel::setSmallPurchaseThreshold, onNavigateToTransaction)
+                    }
+                }
                 StatsViewType.CATEGORY_BREAKDOWN -> {
                     // Type toggle (Expense vs Income)
                     item {
@@ -159,7 +191,7 @@ fun StatsScreen(
                                     modifier = Modifier
                                         .weight(1f)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(if (isSelected) (if (type == TransactionType.EXPENSE) ExpenseRed else IncomeGreen) else Color.Transparent)
+                                        .background(if (isSelected) (if (type == TransactionType.EXPENSE) FinancialColors.expense else FinancialColors.income) else Color.Transparent)
                                         .clickable {
                                             selectedTransactionType = type
                                             selectedDrilldownCategory = null
@@ -169,7 +201,7 @@ fun StatsScreen(
                                 ) {
                                     Text(
                                         text = type.name,
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                         color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
                                     )
                                 }
@@ -186,7 +218,7 @@ fun StatsScreen(
                         }
                     } else {
                         // Donut Chart
-                        item {
+                        if (InsightWidget.CATEGORY_DONUT in visibleCharts) item {
                             DonutPieChart(
                                 items = activeCategoryItems,
                                 totalAmount = totalAmount,
@@ -196,15 +228,17 @@ fun StatsScreen(
                         }
 
                         // Ranked Category Horizontal Bars with drilldown
+                        if (InsightWidget.CATEGORY_RANKING in visibleCharts) {
                         item { Text("Category Ranking", style = MaterialTheme.typography.titleMedium) }
                         items(activeCategoryItems, key = { "rank_${it.category.id}" }, contentType = { "category" }) { category ->
                             RankedCategoryBarChart(
                                 items = listOf(category.copy(subcategoryBreakdown = emptyList())),
                                 currencyCode = currencyCode,
-                                maximumAmount = activeCategoryItems.maxOf { it.totalAmount },
+                                maximumAmount = categoryMaximum,
                                 showHeader = false,
                                 onCategorySelected = { selectedDrilldownCategory = category }
                             )
+                        }
                         }
 
                         // Drilldown info if category selected
@@ -226,13 +260,13 @@ fun StatsScreen(
                                                 CategoryIconBadge(iconName = cat.category.iconName, colorHex = cat.category.colorHex, size = 36.dp)
                                                 Spacer(modifier = Modifier.width(10.dp))
                                                 Column {
-                                                    Text(cat.category.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                                                    Text(cat.category.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
                                                     Text("${cat.transactionCount} transactions · ${String.format("%.1f", cat.percentage)}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
                                             }
                                             Text(
                                                 CurrencyFormatter.formatAmount(cat.totalAmount, currencyCode),
-                                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                                                 color = MaterialTheme.colorScheme.primary
                                             )
                                         }
@@ -262,7 +296,9 @@ fun StatsScreen(
                         item {
                             DailySpendingTrendChart(
                                 data = dailyTrendData,
-                                currencyCode = currencyCode
+                                currencyCode = currencyCode,
+                                showDaily = InsightWidget.DAILY_TREND in visibleCharts,
+                                showCumulative = InsightWidget.CUMULATIVE_PACE in visibleCharts
                             )
                         }
                     }
@@ -276,7 +312,7 @@ fun StatsScreen(
                     item {
                         Text(
                             text = "Historical Breakdown",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                         )
                     }
 
@@ -294,14 +330,14 @@ fun StatsScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column {
-                                    Text(month.monthLabel, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+                                    Text(month.monthLabel, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                                     Text("Savings Rate: ${String.format("%.1f", month.savingsRate)}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
                                         CurrencyFormatter.formatAmount(month.balance, currencyCode),
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = if (month.balance >= 0) IncomeGreen else ExpenseRed
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = if (month.balance >= 0) FinancialColors.income else FinancialColors.expense
                                     )
                                     Text(
                                         "In: ${CurrencyFormatter.formatAmount(month.totalIncome, currencyCode, showDecimals = false)} · Out: ${CurrencyFormatter.formatAmount(month.totalExpense, currencyCode, showDecimals = false)}",
@@ -318,7 +354,7 @@ fun StatsScreen(
                     item {
                         Text(
                             text = "Top Payees & Merchants",
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                         )
                     }
 
@@ -359,7 +395,7 @@ fun StatsScreen(
                                         Column {
                                             Text(
                                                 merchant.merchantName,
-                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
                                             )
                                             Text(
                                                 "${merchant.transactionCount} times · Avg ${CurrencyFormatter.formatAmount(merchant.averageSpent, currencyCode)}",
@@ -371,8 +407,8 @@ fun StatsScreen(
 
                                     Text(
                                         CurrencyFormatter.formatAmount(merchant.totalSpent, currencyCode),
-                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = ExpenseRed
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                        color = FinancialColors.expense
                                     )
                                 }
                             }
@@ -381,7 +417,7 @@ fun StatsScreen(
                 }
 
                 StatsViewType.PERIOD_COMPARISON -> {
-                    item {
+                    if (InsightWidget.CATEGORY_COMPARISON in visibleCharts) item {
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -390,7 +426,7 @@ fun StatsScreen(
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Text(
                                     text = "This Month vs Last Month",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -404,8 +440,8 @@ fun StatsScreen(
                                         Text("Monthly Expenses", style = MaterialTheme.typography.bodyMedium)
                                         Text(
                                             CurrencyFormatter.formatAmount(periodSummary.totalExpense, currencyCode),
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = ExpenseRed
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = FinancialColors.expense
                                         )
                                         Text(
                                             "Prev: ${CurrencyFormatter.formatAmount(periodSummary.previousPeriodExpense, currencyCode)}",
@@ -416,12 +452,12 @@ fun StatsScreen(
 
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = if (periodSummary.expenseChangePercent > 0) ExpenseRed.copy(alpha = 0.15f) else IncomeGreen.copy(alpha = 0.15f)
+                                        color = if (periodSummary.expenseChangePercent > 0) FinancialColors.expense.copy(alpha = 0.15f) else FinancialColors.income.copy(alpha = 0.15f)
                                     ) {
                                         Text(
                                             text = "${if (periodSummary.expenseChangePercent >= 0) "+" else ""}${String.format("%.1f", periodSummary.expenseChangePercent)}%",
-                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                            color = if (periodSummary.expenseChangePercent > 0) ExpenseRed else IncomeGreen,
+                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                            color = if (periodSummary.expenseChangePercent > 0) FinancialColors.expense else FinancialColors.income,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                         )
                                     }
@@ -441,8 +477,8 @@ fun StatsScreen(
                                         Text("Monthly Income", style = MaterialTheme.typography.bodyMedium)
                                         Text(
                                             CurrencyFormatter.formatAmount(periodSummary.totalIncome, currencyCode),
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = IncomeGreen
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = FinancialColors.income
                                         )
                                         Text(
                                             "Prev: ${CurrencyFormatter.formatAmount(periodSummary.previousPeriodIncome, currencyCode)}",
@@ -453,12 +489,12 @@ fun StatsScreen(
 
                                     Surface(
                                         shape = RoundedCornerShape(8.dp),
-                                        color = if (periodSummary.incomeChangePercent >= 0) IncomeGreen.copy(alpha = 0.15f) else ExpenseRed.copy(alpha = 0.15f)
+                                        color = if (periodSummary.incomeChangePercent >= 0) FinancialColors.income.copy(alpha = 0.15f) else FinancialColors.expense.copy(alpha = 0.15f)
                                     ) {
                                         Text(
                                             text = "${if (periodSummary.incomeChangePercent >= 0) "+" else ""}${String.format("%.1f", periodSummary.incomeChangePercent)}%",
-                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                            color = if (periodSummary.incomeChangePercent >= 0) IncomeGreen else ExpenseRed,
+                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                            color = if (periodSummary.incomeChangePercent >= 0) FinancialColors.income else FinancialColors.expense,
                                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                         )
                                     }
@@ -467,19 +503,19 @@ fun StatsScreen(
                         }
                     }
 
-                    if (categoryComparisons.isNotEmpty()) {
+                    if (InsightWidget.CATEGORY_COMPARISON in visibleCharts && categoryComparisons.isNotEmpty()) {
                         item { Text("Category Shift (vs Last Month)", style = MaterialTheme.typography.titleMedium) }
                         items(categoryComparisons, key = { "comparison_${it.category.id}" }, contentType = { "comparison" }) { comparison ->
                             MonthOverMonthCategoryBarChart(
                                 comparisons = listOf(comparison),
                                 currencyCode = currencyCode,
-                                maximumAmount = categoryComparisons.maxOf { maxOf(it.currentMonthAmount, it.previousMonthAmount) },
+                                maximumAmount = comparisonMaximum,
                                 showHeader = false
                             )
                         }
                     }
 
-                    if (dayOfWeekHabits.isNotEmpty() && dayOfWeekHabits.any { it.totalExpense > 0L }) {
+                    if (InsightWidget.WEEKDAY in visibleCharts && dayOfWeekHabits.isNotEmpty() && dayOfWeekHabits.any { it.totalExpense > 0L }) {
                         item {
                             DayOfWeekHabitsChart(
                                 habits = dayOfWeekHabits,
@@ -493,6 +529,7 @@ fun StatsScreen(
         }
     }
 
+    if (showChartsDialog) ChartPreferencesDialog(visibleCharts, viewModel::setChartVisible, viewModel::setAllChartsVisible) { showChartsDialog = false }
     if (showMonthPicker) {
         MonthPickerDialog(
             currentCalendar = currentMonth,

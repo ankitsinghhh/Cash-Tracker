@@ -188,103 +188,36 @@ fun MonthSelectorHeader(
 
 @Composable
 fun PeriodTotalsBar(
-    totalIncome: Long,
-    totalExpense: Long,
-    balance: Long,
-    currencyCode: String = "INR",
-    modifier: Modifier = Modifier
+    totalIncome: Long, totalExpense: Long, balance: Long,
+    currencyCode: String = "INR", modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp
+        modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
+        shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
     ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Income Column
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Income",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = CurrencyFormatter.formatAmount(totalIncome, currencyCode, showDecimals = false),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        ),
-                        color = IncomeGreen,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Monthly spending", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(CurrencyFormatter.formatAmount(totalExpense, currencyCode),
+                style = MaterialTheme.typography.headlineMedium.copy(fontFeatureSettings = "tnum"),
+                color = MaterialTheme.colorScheme.onSurface, maxLines = 2)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Income", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(CurrencyFormatter.formatAmount(totalIncome, currencyCode), color = FinancialColors.income,
+                        style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"))
                 }
-
-                // Expense Column
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Expenses",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = CurrencyFormatter.formatAmount(totalExpense, currencyCode, showDecimals = false),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        ),
-                        color = ExpenseRed,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                // Total Column
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Total",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    val balanceColor = if (balance >= 0) MaterialTheme.colorScheme.onSurface else ExpenseRed
-                    Text(
-                        text = CurrencyFormatter.formatAmount(balance, currencyCode, showDecimals = false),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        ),
-                        color = balanceColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("Net cash flow", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(CurrencyFormatter.formatAmount(balance, currencyCode),
+                        color = if (balance < 0) FinancialColors.expense else MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"))
                 }
             }
-            HorizontalDivider(
-                thickness = 0.6.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
-            )
         }
     }
 }
-
 private val rowTimeFormat = ThreadLocal.withInitial {
     SimpleDateFormat("hh:mm a", Locale.US)
 }
@@ -313,9 +246,9 @@ fun TransactionItemRow(
     val isExpense = tx.type == TransactionType.EXPENSE
 
     val amountColor = when {
-        isIncome -> IncomeGreen
-        isExpense -> ExpenseRed
-        else -> TransferTeal
+        isIncome -> FinancialColors.income
+        isExpense -> FinancialColors.expense
+        else -> FinancialColors.transfer
     }
 
     val amountPrefix = when {
@@ -324,10 +257,10 @@ fun TransactionItemRow(
         else -> "⇆"
     }
 
-    // Main display title: Prioritize Note (highlighted) as in Money Manager
+    // Merchant first; preserve notes in the metadata when both are present.
     val mainHighlightText = when {
-        tx.note.isNotBlank() -> tx.note
         tx.payee.isNotBlank() -> tx.payee
+        tx.note.isNotBlank() -> tx.note
         isTransfer -> "Transfer"
         item.subcategory != null -> item.subcategory.name
         else -> item.category?.name ?: "Expense"
@@ -344,7 +277,7 @@ fun TransactionItemRow(
     } else {
         val acc = item.account?.name ?: "Account"
         if (tx.payee.isNotBlank() && tx.note.isNotBlank()) {
-            "$acc · ${tx.payee}"
+            "$acc · ${tx.note}"
         } else {
             acc
         }
@@ -352,7 +285,7 @@ fun TransactionItemRow(
 
     val isThemeDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val useLargeTextLayout = LocalDensity.current.fontScale >= 1.3f
-    val selectedBgColor = if (isThemeDark) {
+    val selectedBgColor = if (FinancialColors.refined) MaterialTheme.colorScheme.primaryContainer else if (isThemeDark) {
         Color(0xFF3E2226) // Deep warm burgundy highlight in dark mode (as user confirmed: "for dark its fine whatever is there currently")
     } else {
         Color(0xFFFFEBEE) // Clean soft rose/coral highlight in light mode
@@ -368,7 +301,7 @@ fun TransactionItemRow(
             ),
         color = if (isSelected) selectedBgColor else Color.Transparent,
         border = if (isSelected) {
-            if (isThemeDark) {
+            if (FinancialColors.refined) BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary) else if (isThemeDark) {
                 BorderStroke(0.5.dp, Color(0xFF5C2A2D))
             } else {
                 BorderStroke(0.5.dp, Color(0xFFFFCDD2))
@@ -377,105 +310,42 @@ fun TransactionItemRow(
         tonalElevation = 0.dp
     ) {
         if (useLargeTextLayout) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(mainHighlightText, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                Text("$amountPrefix $formattedAmount", color = amountColor, style = MaterialTheme.typography.titleMedium)
+                Text("$amountPrefix $formattedAmount", color = amountColor, style = MaterialTheme.typography.titleMedium.copy(fontFeatureSettings = "tnum"))
                 Text(categoryDisplayName, style = MaterialTheme.typography.bodySmall)
                 Text(accountSubtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(timeString, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (tx.receiptUri != null) Text("Receipt attached", style = MaterialTheme.typography.bodySmall)
             }
         } else {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Left Category Section: Text / Emoji only (no bulky circle box)
-            Box(
-                modifier = Modifier.widthIn(min = 60.dp, max = 100.dp),
-                contentAlignment = Alignment.CenterStart
-            ) {
-                Text(
-                    text = categoryDisplayName,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.5.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal
-                    ),
-                    color = if (isSelected && !isThemeDark) Color(0xFF374151) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                CategoryIconBadge(
+                    iconName = if (isTransfer) "currency_exchange" else item.category?.iconName ?: "category",
+                    colorHex = item.category?.colorHex ?: "#64748B", size = 36.dp, iconSize = 19.dp
                 )
-            }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Center Column: Main Note (Prominently Highlighted) + Account info
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = mainHighlightText,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            fontSize = 14.5.sp,
-                            letterSpacing = 0.1.sp
-                        ),
-                        color = if (isSelected && !isThemeDark) Color(0xFF111827) else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    if (tx.receiptUri != null) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Receipt,
-                            contentDescription = "Receipt",
-                            tint = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.size(12.dp)
-                        )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(mainHighlightText, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        if (tx.receiptUri != null) Icon(Icons.Default.Receipt, "Receipt attached", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    Text(categoryDisplayName, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(accountSubtitle, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = accountSubtitle,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Normal
-                    ),
-                    color = if (isSelected && !isThemeDark) Color(0xFF4B5563) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.widthIn(max = 150.dp), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("$amountPrefix $formattedAmount", color = amountColor,
+                        style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = "tnum"), maxLines = 2)
+                    Text(timeString, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-
-            Spacer(modifier = Modifier.width(10.dp))
-
-            // Right Column: Amount & Time
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "$amountPrefix $formattedAmount",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp
-                    ),
-                    color = amountColor
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = timeString,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
-                    color = if (isSelected && !isThemeDark) Color(0xFF6B7280) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-            }
-        }
         }
     }
 }
-
 @Composable
 fun EmptyStateView(
     title: String,
@@ -498,11 +368,11 @@ fun EmptyStateView(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        icon()
+        Box(Modifier.size(96.dp).clip(RoundedCornerShape(28.dp)).background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)), contentAlignment = Alignment.Center) { icon() }
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(6.dp))
@@ -551,7 +421,7 @@ fun MonthPickerDialog(
             ) {
                 Text(
                     text = "Date",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
 
@@ -667,7 +537,7 @@ fun MonthPickerDialog(
                                         fontSize = 13.sp
                                     ),
                                     color = when {
-                                        isCurrentlySelected -> ExpenseRed
+                                        isCurrentlySelected -> FinancialColors.expense
                                         isActualCurrentMonth -> MaterialTheme.colorScheme.primary
                                         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                                     }

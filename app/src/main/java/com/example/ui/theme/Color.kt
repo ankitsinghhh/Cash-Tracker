@@ -123,6 +123,11 @@ enum class AppThemePalette(
         description = "Adaptive colors generated from device wallpaper",
         previewPrimary = Color(0xFF3B82F6),
         previewSecondary = Color(0xFF93C5FD)
+    ),
+    STUDIO(
+        id = "STUDIO", displayName = "Quiet Studio",
+        description = "Neutral surfaces, restrained teal accents and layered dark cards",
+        previewPrimary = Color(0xFF24675F), previewSecondary = Color(0xFFD9EDE7)
     )
 }
 

@@ -1,4 +1,5 @@
 package com.example.ui.screens.memos
+import com.example.ui.theme.FinancialColors
 
 import android.app.DatePickerDialog
 import androidx.compose.foundation.background
@@ -27,7 +28,6 @@ import com.example.data.model.DailyMemo
 import com.example.ui.MainViewModel
 import com.example.ui.components.CategoryIconResolver
 import com.example.ui.components.EmptyStateView
-import com.example.ui.theme.ExpenseRed
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -126,7 +126,7 @@ fun DailyMemosScreen(
                             }
 
                             IconButton(onClick = { viewModel.deleteMemo(memo) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ExpenseRed)
+                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = FinancialColors.expense)
                             }
                         }
                     }

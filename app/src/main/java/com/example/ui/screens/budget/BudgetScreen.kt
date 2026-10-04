@@ -116,8 +116,8 @@ fun BudgetScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(start = 12.dp, top = 4.dp, end = 12.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Target Monthly Budget & Overview Card
             item {
@@ -141,14 +141,14 @@ fun BudgetScreen(
                                 )
                                 Text(
                                     text = CurrencyFormatter.formatAmount(effectiveBudget, currencyCode),
-                                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
 
                             FilledTonalButton(
                                 onClick = { showEditTargetGoalDialog = true },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(16.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -169,7 +169,7 @@ fun BudgetScreen(
                                 .fillMaxWidth()
                                 .height(10.dp)
                                 .clip(RoundedCornerShape(5.dp)),
-                            color = if (overallProgress > 1f) ExpenseRed else if (overallProgress > 0.8f) WarningAmber else TealPrimary,
+                            color = if (overallProgress > 1f) FinancialColors.expense else if (overallProgress > 0.8f) FinancialColors.warning else FinancialColors.accent,
                             trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
 
@@ -183,8 +183,8 @@ fun BudgetScreen(
                                 Text("Spent", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
                                     text = CurrencyFormatter.formatAmount(totalSpent, currencyCode),
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (overallProgress > 1f) ExpenseRed else MaterialTheme.colorScheme.onSurface
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (overallProgress > 1f) FinancialColors.expense else MaterialTheme.colorScheme.onSurface
                                 )
                             }
 
@@ -192,8 +192,8 @@ fun BudgetScreen(
                                 Text("Usage", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
                                     text = "${String.format(Locale.US, "%.0f", overallProgress * 100)}%",
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (overallProgress > 1f) ExpenseRed else MaterialTheme.colorScheme.primary
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (overallProgress > 1f) FinancialColors.expense else MaterialTheme.colorScheme.primary
                                 )
                             }
 
@@ -201,8 +201,8 @@ fun BudgetScreen(
                                 Text("Remaining", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
                                     text = CurrencyFormatter.formatAmount(totalRemaining, currencyCode),
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (totalRemaining >= 0) IncomeGreen else ExpenseRed
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (totalRemaining >= 0) FinancialColors.income else FinancialColors.expense
                                 )
                             }
                         }
@@ -230,7 +230,7 @@ fun BudgetScreen(
                 ) {
                     Text(
                         text = "Category Budgets (${budgetProgressList.size})",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                     TextButton(onClick = { showAddBudgetDialog = true }) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -280,13 +280,13 @@ fun BudgetScreen(
                                     Column {
                                         Text(
                                             text = item.category?.name ?: "All Expenses",
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                                         )
                                         Text(
                                             text = if (item.isOverBudget) "Over budget by ${CurrencyFormatter.formatAmount(-item.remainingAmount, currencyCode)}"
                                             else "Left: ${CurrencyFormatter.formatAmount(item.remainingAmount, currencyCode)}",
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = if (item.isOverBudget) ExpenseRed else IncomeGreen
+                                            color = if (item.isOverBudget) FinancialColors.expense else FinancialColors.income
                                         )
                                     }
                                 }
@@ -294,8 +294,8 @@ fun BudgetScreen(
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(
                                         text = "${String.format(Locale.US, "%.0f", item.utilizationPercent)}%",
-                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = if (item.isOverBudget) ExpenseRed else MaterialTheme.colorScheme.onSurface
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                        color = if (item.isOverBudget) FinancialColors.expense else MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
                                         text = "${CurrencyFormatter.formatAmount(item.spentAmount, currencyCode, showDecimals = false)} / ${CurrencyFormatter.formatAmount(item.budget.amount, currencyCode, showDecimals = false)}",
@@ -313,7 +313,7 @@ fun BudgetScreen(
                                     .fillMaxWidth()
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
-                                color = if (item.isOverBudget) ExpenseRed else if (item.utilizationPercent > 80f) WarningAmber else GeoPrimary,
+                                color = if (item.isOverBudget) FinancialColors.expense else if (item.utilizationPercent > 80f) FinancialColors.warning else FinancialColors.accent,
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
                         }
@@ -343,9 +343,9 @@ fun BudgetScreen(
 
         AlertDialog(
             onDismissRequest = { showEditTargetGoalDialog = false },
-            title = { Text("Target Monthly Budget Goal", fontWeight = FontWeight.Bold) },
+            title = { Text("Target Monthly Budget Goal", fontWeight = FontWeight.SemiBold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         text = "Set an overall monthly spending ceiling to guide your overall finances and savings.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -382,7 +382,7 @@ fun BudgetScreen(
                                 showEditTargetGoalDialog = false
                             }
                         ) {
-                            Text("Clear", color = ExpenseRed)
+                            Text("Clear", color = FinancialColors.expense)
                         }
                     }
                     TextButton(onClick = { showEditTargetGoalDialog = false }) {
@@ -441,7 +441,7 @@ fun AddEditBudgetDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existingBudget != null) "Edit Category Budget" else "New Category Budget", fontWeight = FontWeight.Bold) },
+        title = { Text(if (existingBudget != null) "Edit Category Budget" else "New Category Budget", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Select Category", style = MaterialTheme.typography.labelMedium)
@@ -515,7 +515,7 @@ fun AddEditBudgetDialog(
             Row {
                 if (existingBudget != null) {
                     TextButton(onClick = onDelete) {
-                        Text("Delete", color = ExpenseRed)
+                        Text("Delete", color = FinancialColors.expense)
                     }
                 }
                 TextButton(onClick = onDismiss) { Text("Cancel") }

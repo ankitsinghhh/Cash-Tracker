@@ -149,7 +149,7 @@ fun RecurringInstallmentsScreen(
                                         Text(
                                             text = CurrencyFormatter.formatAmount(item.amount, currencyCode),
                                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = if (item.type == TransactionType.EXPENSE) ExpenseRed else IncomeGreen
+                                            color = if (item.type == TransactionType.EXPENSE) FinancialColors.expense else FinancialColors.income
                                         )
                                         Text(
                                             text = "Next: ${dateFormat.format(Date(item.nextDueDateMillis))}",
@@ -177,7 +177,7 @@ fun RecurringInstallmentsScreen(
                                     }
 
                                     IconButton(onClick = { viewModel.deleteRecurring(item) }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ExpenseRed)
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = FinancialColors.expense)
                                     }
                                 }
                             }
@@ -231,7 +231,7 @@ fun RecurringInstallmentsScreen(
                                         Text(
                                             "${CurrencyFormatter.formatAmount(plan.monthlyAmount, currencyCode)}/mo",
                                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = ExpenseRed
+                                            color = FinancialColors.expense
                                         )
                                         Text(
                                             "Paid ${plan.paidInstallments} of ${plan.totalInstallments}",
@@ -246,7 +246,7 @@ fun RecurringInstallmentsScreen(
                                 LinearProgressIndicator(
                                     progress = { progress.coerceIn(0f, 1f) },
                                     modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                                    color = IncomeGreen,
+                                    color = FinancialColors.income,
                                     trackColor = MaterialTheme.colorScheme.surfaceVariant
                                 )
 
@@ -279,7 +279,7 @@ fun RecurringInstallmentsScreen(
                                             }
                                         }
                                         IconButton(onClick = { viewModel.deleteInstallment(plan) }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ExpenseRed)
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = FinancialColors.expense)
                                         }
                                     }
                                 }

@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -76,7 +77,10 @@ fun CategoryIconBadge(
     size: Dp = 40.dp,
     iconSize: Dp = 22.dp
 ) {
-    val bgColor = CategoryIconResolver.parseColor(colorHex)
+    val originalColor = CategoryIconResolver.parseColor(colorHex)
+    val bgColor = if (com.example.ui.theme.FinancialColors.refined && androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+        androidx.compose.ui.graphics.lerp(originalColor, Color.White, 0.45f)
+    } else originalColor
     val icon = CategoryIconResolver.getIcon(iconName)
 
     Box(

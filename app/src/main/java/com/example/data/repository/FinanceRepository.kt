@@ -42,6 +42,10 @@ class FinanceRepository(val database: AppDatabase, private val scope: CoroutineS
     private val bookmarkDao = database.bookmarkDao()
     private val settingDao = database.settingDao()
 
+    // One observer gives chart preferences an atomic snapshot after a bulk change.
+    val settings: Flow<Map<String, String>> = readList("settings", settingDao.getAllSettings())
+        .map { items -> items.associate { it.key to it.value } }.flowOn(Dispatchers.Default).shared()
+
     val accounts: Flow<List<Account>> = readList("accounts", accountDao.getAllActiveAccounts())
     val allAccounts: Flow<List<Account>> = readList("allAccounts", accountDao.getAllAccounts())
     val categories: Flow<List<Category>> = readList("categories", categoryDao.getAllActiveCategories())

@@ -178,21 +178,21 @@ fun OnboardingScreen(
             title = "Track Daily Expenses",
             description = "Know where every penny goes with lightning-fast entry and clear category breakdown.",
             icon = Icons.Default.ReceiptLong,
-            badgeColor = GeoPrimary
+            badgeColor = FinancialColors.accent
         ),
         FinancialGoalOption(
             id = "SAVE_MONEY",
             title = "Cut Overspending & Save",
             description = "Set strict category limits, monitor alerts, and hit monthly savings targets.",
             icon = Icons.Default.Savings,
-            badgeColor = IncomeGreen
+            badgeColor = FinancialColors.income
         ),
         FinancialGoalOption(
             id = "MANAGE_CARDS",
             title = "Manage Accounts & Cards",
             description = "Keep multiple bank accounts, cash registers, and credit card limits in sync.",
             icon = Icons.Default.CreditCard,
-            badgeColor = TransferTeal
+            badgeColor = FinancialColors.transfer
         ),
         FinancialGoalOption(
             id = "BUILD_WEALTH",
@@ -740,14 +740,14 @@ private fun StepAccountsSelection(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (item.isGenericBank) GeoPrimary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primaryContainer,
+                                color = if (item.isGenericBank) FinancialColors.accent.copy(alpha = 0.15f) else MaterialTheme.colorScheme.primaryContainer,
                                 modifier = Modifier.size(40.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         item.icon,
                                         contentDescription = null,
-                                        tint = if (item.isGenericBank) GeoPrimary else MaterialTheme.colorScheme.primary
+                                        tint = if (item.isGenericBank) FinancialColors.accent else MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -762,12 +762,12 @@ private fun StepAccountsSelection(
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Surface(
                                             shape = RoundedCornerShape(4.dp),
-                                            color = GeoPrimary.copy(alpha = 0.1f)
+                                            color = FinancialColors.accent.copy(alpha = 0.1f)
                                         ) {
                                             Text(
                                                 "Generic / Private",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = GeoPrimary,
+                                                color = FinancialColors.accent,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                             )
                                         }
@@ -869,11 +869,11 @@ private fun StepBudgetPreference(
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = IncomeGreen.copy(alpha = 0.15f),
+                        color = FinancialColors.income.copy(alpha = 0.15f),
                         modifier = Modifier.size(44.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Savings, contentDescription = null, tint = IncomeGreen)
+                            Icon(Icons.Default.Savings, contentDescription = null, tint = FinancialColors.income)
                         }
                     }
                     Spacer(modifier = Modifier.width(14.dp))
@@ -1101,7 +1101,7 @@ private fun StepSecurityAndReview(
                             Text(
                                 if (wantMonthlyBudget && monthlyBudgetText.isNotBlank()) "$symbol $monthlyBudgetText / month" else "Flexible (No limit)",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                color = if (wantMonthlyBudget) IncomeGreen else MaterialTheme.colorScheme.onSurface
+                                color = if (wantMonthlyBudget) FinancialColors.income else MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -1169,7 +1169,7 @@ private fun AddCustomAccountDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add Custom Account", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

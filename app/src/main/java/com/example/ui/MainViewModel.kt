@@ -148,6 +148,60 @@ class MainViewModel @JvmOverloads constructor(application: Application, private 
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppThemeMode.SYSTEM)
 
+    val visibleCharts: StateFlow<Set<InsightWidget>> = repository.settings.map { settings ->
+        InsightWidget.entries.filter { settings["chart_${it.name}"] != "false" }.toSet()
+    }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), InsightWidget.entries.toSet())
+
+    val calendarHeatmap = repository.getSettingFlow("calendar_heatmap")
+        .map { it == "true" }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val smallPurchaseThreshold = primaryCurrency.flatMapLatest { currency -> repository.getSettingFlow("small_purchase_threshold_$currency") }
+        .map { it?.toLongOrNull()?.coerceIn(1L, 100_000_000_000L) ?: 20_000L }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 20_000L)
+
+    private val _insightsError = MutableStateFlow<String?>(null)
+    val insightsError = _insightsError.asStateFlow()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val preparedExpenseInsights: Flow<ExpenseInsights?> = combine(_currentMonth, primaryCurrency, visibleCharts, refresh) { month, currency, charts, _ -> Triple(month, currency, charts) }
+        .flatMapLatest { (month, currency, charts) ->
+            if (charts.none { it.isNew }) return@flatMapLatest flowOf(null)
+            val start = (month.clone() as Calendar).apply {
+                set(Calendar.DAY_OF_MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                when {
+                    InsightWidget.SEASONALITY in charts -> { add(Calendar.YEAR, -1); set(Calendar.MONTH, Calendar.JANUARY) }
+                    charts.any { it in setOf(InsightWidget.CATEGORY_TRENDS, InsightWidget.RECURRING_TREND, InsightWidget.FREQUENCY) } -> add(Calendar.MONTH, -5)
+                    InsightWidget.SPENDING_CHANGE in charts || InsightWidget.WEEKLY_DIGEST in charts -> add(Calendar.MONTH, -1)
+                }
+            }
+            val end = (month.clone() as Calendar).apply {
+                set(Calendar.DAY_OF_MONTH, 1); add(Calendar.MONTH, 1)
+                set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+            }
+            combine(repository.transactionsBetween(start.timeInMillis, end.timeInMillis - 1), smallPurchaseThreshold) { records, threshold ->
+                ExpenseInsightEngine.build(records, month, currency, threshold)
+            }.flowOn(Dispatchers.Default).onEach { _insightsError.value = null }
+                .map<ExpenseInsights, ExpenseInsights?> { it }.onStart { emit(null) }.catch { error ->
+                    if (error is CancellationException) throw error
+                    _insightsError.value = "Could not load insights. Please retry."
+                    emit(null)
+                }
+        }
+
+    fun setChartVisible(widget: InsightWidget, visible: Boolean) = launchMutation {
+        repository.setSetting("chart_${widget.name}", visible.toString())
+    }
+    fun setAllChartsVisible(visible: Boolean) = launchMutation {
+        database.withTransaction { InsightWidget.entries.forEach { repository.setSetting("chart_${it.name}", visible.toString()) } }
+    }
+    fun setCalendarHeatmap(visible: Boolean) = launchMutation { repository.setSetting("calendar_heatmap", visible.toString()) }
+    fun setSmallPurchaseThreshold(amount: Long) = launchMutation {
+        require(amount in 1L..100_000_000_000L) { "Enter an amount greater than zero." }
+        repository.setSetting("small_purchase_threshold_${primaryCurrency.value}", amount.toString())
+    }
+
     private val _isAppUnlocked = MutableStateFlow(false)
     val isAppUnlocked: StateFlow<Boolean> = _isAppUnlocked.asStateFlow()
 
@@ -171,6 +225,36 @@ class MainViewModel @JvmOverloads constructor(application: Application, private 
     val allInstallments = repository.installments.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val memos = repository.memos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val bookmarks = repository.bookmarks.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val expenseInsights: StateFlow<ExpenseInsights?> = combine(preparedExpenseInsights,
+        combine(activeRecurring, activeInstallments, allAccounts, monthlyBudgetGoal, budgets) { rules, plans, accounts, goal, budgets ->
+            InsightSchedules(rules, plans, accounts, goal, budgets)
+        }
+    ) { data, schedules ->
+        if (data == null) null else {
+            val today = Calendar.getInstance().apply { set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }
+            val selected = Calendar.getInstance().apply { timeInMillis = data.monthStartMillis }
+            val isCurrent = today.get(Calendar.YEAR) == selected.get(Calendar.YEAR) && today.get(Calendar.MONTH) == selected.get(Calendar.MONTH)
+            val nextWeek = (today.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 7) }.timeInMillis
+            val currencies = schedules.accounts.associate { it.id to it.currency }
+            val bills = if (!isCurrent) emptyList() else (
+                schedules.rules.filter { it.isActive && it.type == TransactionType.EXPENSE && currencies[it.accountId] == data.currency &&
+                    it.nextDueDateMillis >= today.timeInMillis && it.nextDueDateMillis < nextWeek &&
+                    (it.endDateMillis == null || it.nextDueDateMillis <= it.endDateMillis) }
+                    .map { KnownUpcomingBill(it.name, it.amount, it.nextDueDateMillis) } +
+                schedules.plans.filter { !it.isCompleted && it.paidInstallments < it.totalInstallments && currencies[it.accountId] == data.currency &&
+                    it.nextDueDateMillis >= today.timeInMillis && it.nextDueDateMillis < nextWeek }
+                    .map { KnownUpcomingBill(it.name, it.monthlyAmount, it.nextDueDateMillis) }
+            ).sortedBy { it.dueMillis }
+            val key = SimpleDateFormat("yyyy-MM", Locale.US).format(selected.time)
+            val budget = schedules.budgets.firstOrNull { it.categoryId == 0L && it.monthString == key }
+                ?: schedules.budgets.firstOrNull { it.categoryId == 0L && it.monthString == "DEFAULT" }
+            data.copy(upcomingBills = bills, monthBudgetAmount = budget?.amount ?: schedules.goal)
+        }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    private data class InsightSchedules(val rules: List<RecurringTransaction>, val plans: List<InstallmentPlan>,
+        val accounts: List<Account>, val goal: Long, val budgets: List<Budget>)
 
     // PC Manager (Web Access) State
     private val _isPcServerRunning = MutableStateFlow(PCManagerServer.isRunning)

@@ -1,4 +1,5 @@
 package com.example.ui.screens.categories
+import com.example.ui.theme.FinancialColors
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,8 +26,6 @@ import com.example.data.model.TransactionType
 import com.example.ui.MainViewModel
 import com.example.ui.components.CategoryIconBadge
 import com.example.ui.components.CategoryIconResolver
-import com.example.ui.theme.ExpenseRed
-import com.example.ui.theme.IncomeGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,7 +129,7 @@ fun CategoryManagerScreen(
                                     Icon(Icons.Default.Edit, contentDescription = "Edit")
                                 }
                                 IconButton(onClick = { viewModel.deleteCategory(cat) }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ExpenseRed)
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = FinancialColors.expense)
                                 }
                             }
                         }
@@ -162,7 +161,7 @@ fun CategoryManagerScreen(
                                                 modifier = Modifier
                                                     .size(14.dp)
                                                     .clickable { viewModel.deleteCategory(sub) },
-                                                tint = ExpenseRed
+                                                tint = FinancialColors.expense
                                             )
                                         }
                                     }

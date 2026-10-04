@@ -1,4 +1,5 @@
 package com.example.ui.screens.settings
+import com.example.ui.theme.FinancialColors
 
 import android.content.Intent
 import android.net.Uri
@@ -32,10 +33,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.domain.BackupManager
 import com.example.domain.CurrencyFormatter
 import com.example.ui.MainViewModel
+import com.example.ui.components.ChartPreferencesDialog
+import com.example.data.model.InsightWidget
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.AppThemePalette
-import com.example.ui.theme.ExpenseRed
-import com.example.ui.theme.IncomeGreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -76,6 +77,9 @@ fun SettingsScreen(
     val currentPalette by viewModel.themePalette.collectAsStateWithLifecycle()
     val isPcManagerRunning by viewModel.isPcServerRunning.collectAsStateWithLifecycle()
     val currentThemeMode by viewModel.themeMode.collectAsStateWithLifecycle()
+    val visibleCharts by viewModel.visibleCharts.collectAsStateWithLifecycle()
+    val calendarHeatmap by viewModel.calendarHeatmap.collectAsStateWithLifecycle()
+    var showChartsDialog by remember { mutableStateOf(false) }
 
     var showThemePaletteDialog by remember { mutableStateOf(false) }
     var showCurrencyDialog by remember { mutableStateOf(false) }
@@ -373,7 +377,7 @@ fun SettingsScreen(
                                             "Flexible / Not Set • Tap to set & manage"
                                         },
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = if (monthlyBudgetGoal > 0L) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = if (monthlyBudgetGoal > 0L) FinancialColors.income else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -725,6 +729,34 @@ fun SettingsScreen(
                 }
             }
 
+            item { Text("Charts & insights", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary) }
+            item {
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    Column {
+                        Row(Modifier.fillMaxWidth().clickable { showChartsDialog = true }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(Icons.Default.Insights, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column(Modifier.weight(1f)) {
+                                Text("Visible charts", style = MaterialTheme.typography.bodyLarge)
+                                Text("${visibleCharts.size} of ${InsightWidget.entries.size} enabled", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Icon(Icons.Default.ChevronRight, "Choose visible charts")
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
+                        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column(Modifier.weight(1f)) {
+                                Text("Calendar heatmap overlay", style = MaterialTheme.typography.bodyLarge)
+                                Text("Shade Home calendar days by spending. Separate from the Stats heatmap.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = calendarHeatmap, onCheckedChange = viewModel::setCalendarHeatmap)
+                        }
+                    }
+                }
+            }
+
             // General Settings Group
             item {
                 Text(
@@ -958,14 +990,14 @@ fun SettingsScreen(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (isPcManagerRunning) {
                                 Surface(
-                                    color = IncomeGreen.copy(alpha = 0.15f),
+                                    color = FinancialColors.income.copy(alpha = 0.15f),
                                     shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, IncomeGreen.copy(alpha = 0.5f)),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, FinancialColors.income.copy(alpha = 0.5f)),
                                     modifier = Modifier.padding(end = 8.dp)
                                 ) {
                                     Text(
                                         text = "RUNNING",
-                                        color = IncomeGreen,
+                                        color = FinancialColors.income,
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
@@ -1042,7 +1074,7 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.FileUpload, contentDescription = null, tint = IncomeGreen)
+                                Icon(Icons.Default.FileUpload, contentDescription = null, tint = FinancialColors.income)
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text("Import Excel / CSV File", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium))
@@ -1115,7 +1147,7 @@ fun SettingsScreen(
                 Text(
                     text = "Reset",
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = ExpenseRed
+                    color = FinancialColors.expense
                 )
             }
 
@@ -1159,10 +1191,10 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.DeleteForever, contentDescription = null, tint = ExpenseRed)
+                                Icon(Icons.Default.DeleteForever, contentDescription = null, tint = FinancialColors.expense)
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
-                                    Text("A complete reset", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, color = ExpenseRed))
+                                    Text("A complete reset", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, color = FinancialColors.expense))
                                     Text("Erase everything and restore clean factory configuration", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
@@ -1447,7 +1479,7 @@ fun SettingsScreen(
                         }
                         showResetContentsDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = ExpenseRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = FinancialColors.expense)
                 ) {
                     Text("Reset Contents")
                 }
@@ -1476,7 +1508,7 @@ fun SettingsScreen(
                         }
                         showResetConfirmDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = ExpenseRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = FinancialColors.expense)
                 ) {
                     Text("Reset Everything")
                 }
@@ -1675,7 +1707,7 @@ fun SettingsScreen(
                 Icon(
                     imageVector = if (data.isSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
                     contentDescription = null,
-                    tint = if (data.isSuccess) IncomeGreen else ExpenseRed,
+                    tint = if (data.isSuccess) FinancialColors.income else FinancialColors.expense,
                     modifier = Modifier.size(36.dp)
                 )
             },
@@ -1739,6 +1771,7 @@ fun SettingsScreen(
     }
 
     // Theme Palette Dialog
+    if (showChartsDialog) ChartPreferencesDialog(visibleCharts, viewModel::setChartVisible, viewModel::setAllChartsVisible) { showChartsDialog = false }
     if (showThemePaletteDialog) {
         AlertDialog(
             onDismissRequest = { showThemePaletteDialog = false },

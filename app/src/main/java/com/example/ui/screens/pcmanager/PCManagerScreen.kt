@@ -1,4 +1,5 @@
 package com.example.ui.screens.pcmanager
+import com.example.ui.theme.FinancialColors
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -35,8 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.MainViewModel
-import com.example.ui.theme.ExpenseRed
-import com.example.ui.theme.IncomeGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,7 +109,7 @@ fun PCManagerScreen(
                             Toast.makeText(context, "PC Manager Started", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = IncomeGreen,
+                            containerColor = FinancialColors.income,
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(12.dp),
@@ -135,7 +134,7 @@ fun PCManagerScreen(
                             Toast.makeText(context, "PC Manager Stopped", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = ExpenseRed,
+                            containerColor = FinancialColors.expense,
                             contentColor = Color.White
                         ),
                         shape = RoundedCornerShape(12.dp),
@@ -279,7 +278,7 @@ fun PCManagerScreen(
                                 Icon(
                                     imageVector = Icons.Default.Lock,
                                     contentDescription = null,
-                                    tint = IncomeGreen,
+                                    tint = FinancialColors.income,
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -348,7 +347,7 @@ fun PCManagerScreen(
                     fontSize = 13.sp,
                     lineHeight = 18.sp
                 ),
-                color = ExpenseRed
+                color = FinancialColors.expense
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -454,7 +453,7 @@ fun PCManagerScreen(
                         Text(
                             text = if (isRunning) "Server active on port $serverPort" else "Server currently stopped",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (isRunning) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                            color = if (isRunning) FinancialColors.income else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

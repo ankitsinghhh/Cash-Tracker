@@ -82,7 +82,7 @@ fun AccountsScreen(
                 Text(
                     text = "Accounts & Net Worth",
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         fontSize = 17.sp
                     ),
                     color = MaterialTheme.colorScheme.onSurface
@@ -104,8 +104,8 @@ fun AccountsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(start = 12.dp, top = 4.dp, end = 12.dp, bottom = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
                     // Net Worth Summary Card
                     item {
@@ -123,7 +123,7 @@ fun AccountsScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = CurrencyFormatter.formatAmount(netWorth.netWorth, currencyCode),
-                                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
 
@@ -139,16 +139,16 @@ fun AccountsScreen(
                                         Text("Total Assets", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                                         Text(
                                             CurrencyFormatter.formatAmount(netWorth.totalAssets, currencyCode),
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = IncomeGreen
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = FinancialColors.income
                                         )
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text("Total Liabilities", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                                         Text(
                                             CurrencyFormatter.formatAmount(netWorth.totalLiabilities, currencyCode),
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = ExpenseRed
+                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                            color = FinancialColors.expense
                                         )
                                     }
                                 }
@@ -177,7 +177,7 @@ fun AccountsScreen(
                         item {
                             Text(
                                 text = groupName,
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -206,10 +206,10 @@ fun AccountsScreen(
                                                     .clip(CircleShape)
                                                     .background(
                                                         when (acc.account.type) {
-                                                            AccountType.CASH -> IncomeGreen.copy(alpha = 0.15f)
-                                                            AccountType.CREDIT_CARD -> ExpenseRed.copy(alpha = 0.15f)
-                                                            AccountType.BANK -> TransferTeal.copy(alpha = 0.15f)
-                                                            AccountType.INVESTMENT -> TealPrimary.copy(alpha = 0.15f)
+                                                            AccountType.CASH -> FinancialColors.income.copy(alpha = 0.15f)
+                                                            AccountType.CREDIT_CARD -> FinancialColors.expense.copy(alpha = 0.15f)
+                                                            AccountType.BANK -> FinancialColors.transfer.copy(alpha = 0.15f)
+                                                            AccountType.INVESTMENT -> FinancialColors.accent.copy(alpha = 0.15f)
                                                             else -> MaterialTheme.colorScheme.primaryContainer
                                                         }
                                                     ),
@@ -226,10 +226,10 @@ fun AccountsScreen(
                                                     },
                                                     contentDescription = null,
                                                     tint = when (acc.account.type) {
-                                                        AccountType.CASH -> IncomeGreen
-                                                        AccountType.CREDIT_CARD -> ExpenseRed
-                                                        AccountType.BANK -> TransferTeal
-                                                        AccountType.INVESTMENT -> TealPrimary
+                                                        AccountType.CASH -> FinancialColors.income
+                                                        AccountType.CREDIT_CARD -> FinancialColors.expense
+                                                        AccountType.BANK -> FinancialColors.transfer
+                                                        AccountType.INVESTMENT -> FinancialColors.accent
                                                         else -> MaterialTheme.colorScheme.primary
                                                     }
                                                 )
@@ -240,7 +240,7 @@ fun AccountsScreen(
                                             Column {
                                                 Text(
                                                     text = acc.account.name,
-                                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                                                     color = MaterialTheme.colorScheme.onSurface
                                                 )
                                                 Text(
@@ -259,8 +259,8 @@ fun AccountsScreen(
                                             )
                                             Text(
                                                 text = CurrencyFormatter.formatAmount(acc.calculatedBalance, currencyCode),
-                                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                                color = if (isLiability) ExpenseRed else MaterialTheme.colorScheme.onSurface
+                                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                                                color = if (isLiability) FinancialColors.expense else MaterialTheme.colorScheme.onSurface
                                             )
                                         }
                                     }
@@ -281,7 +281,7 @@ fun AccountsScreen(
                                                 Text(
                                                     text = "Limit: ${CurrencyFormatter.formatAmount(acc.creditLimit, currencyCode)} (${String.format("%.0f", acc.utilizationPercent)}%)",
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    color = if (acc.utilizationPercent > 50) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant
+                                                    color = if (acc.utilizationPercent > 50) FinancialColors.expense else MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             }
 
@@ -289,7 +289,7 @@ fun AccountsScreen(
                                             LinearProgressIndicator(
                                                 progress = { (acc.utilizationPercent / 100f).coerceIn(0f, 1f) },
                                                 modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
-                                                color = if (acc.utilizationPercent > 50) ExpenseRed else TealPrimary,
+                                                color = if (acc.utilizationPercent > 50) FinancialColors.expense else FinancialColors.accent,
                                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                                             )
 
@@ -390,7 +390,7 @@ fun AddEditAccountDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (account != null) "Edit Account" else "Add New Account", fontWeight = FontWeight.Bold) },
+        title = { Text(if (account != null) "Edit Account" else "Add New Account", fontWeight = FontWeight.SemiBold) },
         text = {
             LazyColumn(
                 modifier = Modifier.fillMaxWidth(),
@@ -431,7 +431,7 @@ fun AddEditAccountDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(14.dp),
+                                .padding(16.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -486,7 +486,7 @@ fun AddEditAccountDialog(
                         onValueChange = { initialBalanceText = it },
                         label = { Text("Starting / Initial Balance") },
                         placeholder = { Text("0.00") },
-                        leadingIcon = { Text(currencyCode, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp)) },
+                        leadingIcon = { Text(currencyCode, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp)) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -499,7 +499,7 @@ fun AddEditAccountDialog(
                             onValueChange = { creditLimitText = it },
                             label = { Text("Credit Card Limit") },
                             placeholder = { Text("e.g. 100000") },
-                            leadingIcon = { Text(currencyCode, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp)) },
+                            leadingIcon = { Text(currencyCode, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
@@ -580,7 +580,7 @@ fun CreditCardPaymentDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Pay Credit Card Bill", fontWeight = FontWeight.Bold) },
+        title = { Text("Pay Credit Card Bill", fontWeight = FontWeight.SemiBold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
@@ -591,8 +591,8 @@ fun CreditCardPaymentDialog(
 
                 Text(
                     text = "Outstanding Amount: ${CurrencyFormatter.formatAmount(cardAccount.calculatedBalance, currencyCode)}",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = ExpenseRed
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = FinancialColors.expense
                 )
 
                 HorizontalDivider()
@@ -611,7 +611,7 @@ fun CreditCardPaymentDialog(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
+                            .padding(16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -639,7 +639,7 @@ fun CreditCardPaymentDialog(
                     value = paymentAmountText,
                     onValueChange = { paymentAmountText = it },
                     label = { Text("Payment Amount") },
-                    leadingIcon = { Text(currencyCode, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 8.dp)) },
+                    leadingIcon = { Text(currencyCode, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 8.dp)) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )

@@ -208,9 +208,9 @@ fun AddEditTransactionScreen(
     val currentSelectedSubcategory = categories.find { it.id == selectedSubcategoryId }
 
     val themeColor = when (transactionType) {
-        TransactionType.EXPENSE -> ExpenseRed
-        TransactionType.INCOME -> IncomeGreen
-        TransactionType.TRANSFER -> TransferTeal
+        TransactionType.EXPENSE -> FinancialColors.expense
+        TransactionType.INCOME -> FinancialColors.income
+        TransactionType.TRANSFER -> FinancialColors.transfer
     }
 
     fun openDatePicker() {
@@ -324,7 +324,7 @@ fun AddEditTransactionScreen(
                     Text(
                         text = if (existingTx != null) "Edit ${transactionType.name.lowercase().replaceFirstChar { it.uppercase() }}"
                                else transactionType.name.lowercase().replaceFirstChar { it.uppercase() },
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.SemiBold,
                         style = MaterialTheme.typography.titleLarge
                     )
                 },
@@ -348,7 +348,7 @@ fun AddEditTransactionScreen(
                                 exitScreen()
                             }
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ExpenseRed)
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = FinancialColors.expense)
                         }
                     }
                 }
@@ -381,9 +381,9 @@ fun AddEditTransactionScreen(
                     types.forEach { type ->
                         val isSelected = transactionType == type
                         val activeColor = when (type) {
-                            TransactionType.INCOME -> IncomeGreen
-                            TransactionType.EXPENSE -> ExpenseRed
-                            TransactionType.TRANSFER -> TransferTeal
+                            TransactionType.INCOME -> FinancialColors.income
+                            TransactionType.EXPENSE -> FinancialColors.expense
+                            TransactionType.TRANSFER -> FinancialColors.transfer
                         }
 
                         Box(
@@ -409,7 +409,7 @@ fun AddEditTransactionScreen(
                                     TransactionType.TRANSFER -> "Transfer"
                                 },
                                 style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
                                 ),
                                 color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -568,7 +568,7 @@ fun AddEditTransactionScreen(
                                     Icon(
                                         imageVector = Icons.Default.AccountBalance,
                                         contentDescription = null,
-                                        tint = TransferTeal,
+                                        tint = FinancialColors.transfer,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -706,7 +706,7 @@ fun AddEditTransactionScreen(
                                 Text(
                                     text = displayFormatted,
                                     style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.SemiBold,
                                         fontSize = 20.sp
                                     ),
                                     color = themeColor
@@ -825,7 +825,7 @@ fun AddEditTransactionScreen(
                                 Icon(
                                     imageVector = if (receiptUri != null) Icons.Default.Receipt else Icons.Default.CameraAlt,
                                     contentDescription = "Attach Receipt",
-                                    tint = if (receiptUri != null) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (receiptUri != null) FinancialColors.income else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -836,7 +836,7 @@ fun AddEditTransactionScreen(
                 if (receiptUri != null) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerHigh
                     ) {
                         Row(
@@ -847,12 +847,12 @@ fun AddEditTransactionScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = IncomeGreen, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = FinancialColors.income, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Receipt Photo Attached", style = MaterialTheme.typography.bodyMedium)
                             }
                             IconButton(onClick = { receiptUri = null }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Remove receipt", tint = ExpenseRed, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Close, contentDescription = "Remove receipt", tint = FinancialColors.expense, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -889,7 +889,7 @@ fun AddEditTransactionScreen(
                         tonalElevation = 1.dp
                     ) {
                         Column(
-                            modifier = Modifier.padding(14.dp),
+                            modifier = Modifier.padding(16.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             OutlinedTextField(
@@ -904,7 +904,7 @@ fun AddEditTransactionScreen(
                                             activeSection = ActiveInputSection.NONE
                                         }
                                     },
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(16.dp),
                                 leadingIcon = { Icon(Icons.Default.Label, contentDescription = null) }
                             )
 
@@ -920,7 +920,7 @@ fun AddEditTransactionScreen(
                                                 activeSection = ActiveInputSection.NONE
                                             }
                                         },
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(16.dp)
                                 )
                             }
 
@@ -953,7 +953,7 @@ fun AddEditTransactionScreen(
                             .weight(1.4f)
                             .height(50.dp)
                             .testTag("save_transaction_button"),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = themeColor)
                     ) {
                         AnimatedContent(
@@ -981,7 +981,7 @@ fun AddEditTransactionScreen(
                                 }
                                 Text(
                                     text = label,
-                                    fontWeight = FontWeight.Bold,
+                                    fontWeight = FontWeight.SemiBold,
                                     fontSize = 16.sp,
                                     color = Color.White
                                 )
@@ -995,7 +995,7 @@ fun AddEditTransactionScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .height(50.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(16.dp)
                         ) {
                             Text(
                                 text = "Continue",
@@ -1075,7 +1075,7 @@ fun AddEditTransactionScreen(
                                 ) {
                                     Text(
                                         text = "Select Category",
-                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
 
@@ -1124,14 +1124,14 @@ fun AddEditTransactionScreen(
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
+                                                .clip(RoundedCornerShape(16.dp))
                                                 .clickable {
                                                     selectedCategoryId = cat.id
                                                     selectedSubcategoryId = null
                                                     // Auto close or switch to none after choosing category
                                                     activeSection = ActiveInputSection.NONE
                                                 },
-                                            shape = RoundedCornerShape(12.dp),
+                                            shape = RoundedCornerShape(16.dp),
                                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                                                     else MaterialTheme.colorScheme.surface,
                                             border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
@@ -1150,7 +1150,7 @@ fun AddEditTransactionScreen(
                                                 Text(
                                                     text = cat.name,
                                                     style = MaterialTheme.typography.bodySmall.copy(
-                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
                                                         fontSize = 11.5.sp
                                                     ),
                                                     maxLines = 1,
@@ -1181,7 +1181,7 @@ fun AddEditTransactionScreen(
                                 ) {
                                     Text(
                                         text = if (transactionType == TransactionType.TRANSFER) "Select Source Account" else "Select Account",
-                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
 
@@ -1210,12 +1210,12 @@ fun AddEditTransactionScreen(
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
+                                                .clip(RoundedCornerShape(16.dp))
                                                 .clickable {
                                                     selectedAccountId = acc.id
                                                     activeSection = ActiveInputSection.NONE
                                                 },
-                                            shape = RoundedCornerShape(12.dp),
+                                            shape = RoundedCornerShape(16.dp),
                                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                                                     else MaterialTheme.colorScheme.surface,
                                             border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
@@ -1266,7 +1266,7 @@ fun AddEditTransactionScreen(
                                 ) {
                                     Text(
                                         text = "Select Destination Account",
-                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
 
@@ -1295,12 +1295,12 @@ fun AddEditTransactionScreen(
                                         Surface(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clip(RoundedCornerShape(12.dp))
+                                                .clip(RoundedCornerShape(16.dp))
                                                 .clickable {
                                                     selectedToAccountId = acc.id
                                                     activeSection = ActiveInputSection.NONE
                                                 },
-                                            shape = RoundedCornerShape(12.dp),
+                                            shape = RoundedCornerShape(16.dp),
                                             color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                                                     else MaterialTheme.colorScheme.surface,
                                             border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
@@ -1317,7 +1317,7 @@ fun AddEditTransactionScreen(
                                                         else -> Icons.Default.AccountBalance
                                                     },
                                                     contentDescription = null,
-                                                    tint = TransferTeal,
+                                                    tint = FinancialColors.transfer,
                                                     modifier = Modifier.size(22.dp)
                                                 )
                                                 Spacer(modifier = Modifier.height(4.dp))

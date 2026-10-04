@@ -1,4 +1,5 @@
 package com.example.ui.screens.accounts
+import com.example.ui.theme.FinancialColors
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -28,9 +29,6 @@ import com.example.ui.components.LoadingContent
 import com.example.ui.components.ErrorContent
 import com.example.ui.components.EmptyStateView
 import com.example.ui.components.TransactionItemRow
-import com.example.ui.theme.ExpenseRed
-import com.example.ui.theme.IncomeGreen
-import com.example.ui.theme.TransferTeal
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,7 +70,7 @@ fun AccountDetailScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
-                title = { Text(account.name, fontWeight = FontWeight.Bold) },
+                title = { Text(account.name, fontWeight = FontWeight.SemiBold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -83,7 +81,7 @@ fun AccountDetailScreen(
                         Icon(Icons.Default.Edit, contentDescription = "Edit Account")
                     }
                     IconButton(onClick = { showDeleteConfirmDialog = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete Account", tint = ExpenseRed)
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Account", tint = FinancialColors.expense)
                     }
                 }
             )
@@ -116,8 +114,8 @@ fun AccountDetailScreen(
                                 )
                                 Text(
                                     text = CurrencyFormatter.formatAmount(accountBalanceInfo?.calculatedBalance ?: 0L, currencyCode),
-                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (isLiability) ExpenseRed else MaterialTheme.colorScheme.onPrimaryContainer
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = if (isLiability) FinancialColors.expense else MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
 
@@ -127,7 +125,7 @@ fun AccountDetailScreen(
                             ) {
                                 Text(
                                     text = account.type.name,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
@@ -148,8 +146,8 @@ fun AccountDetailScreen(
                                 val inAmount = (accountBalanceInfo?.totalIncome ?: 0L) + (accountBalanceInfo?.totalTransferIn ?: 0L)
                                 Text(
                                     "+${CurrencyFormatter.formatAmount(inAmount, currencyCode, showDecimals = false)}",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = IncomeGreen
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = FinancialColors.income
                                 )
                             }
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -157,15 +155,15 @@ fun AccountDetailScreen(
                                 val outAmount = (accountBalanceInfo?.totalExpense ?: 0L) + (accountBalanceInfo?.totalTransferOut ?: 0L)
                                 Text(
                                     "-${CurrencyFormatter.formatAmount(outAmount, currencyCode, showDecimals = false)}",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = ExpenseRed
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    color = FinancialColors.expense
                                 )
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text("Opening Bal", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
                                 Text(
                                     CurrencyFormatter.formatAmount(account.initialBalance, currencyCode, showDecimals = false),
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.onPrimaryContainer
                                 )
                             }
@@ -183,7 +181,7 @@ fun AccountDetailScreen(
                 ) {
                     Text(
                         text = "Transaction History (${accountTransactions.itemCount} loaded)",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
                     )
                 }
             }
@@ -238,7 +236,7 @@ fun AccountDetailScreen(
                         showDeleteConfirmDialog = false
                         onNavigateBack()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = ExpenseRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = FinancialColors.expense)
                 ) {
                     Text("Delete")
                 }

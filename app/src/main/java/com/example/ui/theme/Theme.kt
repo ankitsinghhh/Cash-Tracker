@@ -4,6 +4,9 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
@@ -282,6 +285,30 @@ private val SlateDark = darkColorScheme(
     error = ExpenseRedDark
 )
 
+// Opt-in palette. Existing palette definitions and stored IDs remain unchanged.
+private val StudioLight = lightColorScheme(
+    primary = Color(0xFF24675F), onPrimary = Color.White,
+    primaryContainer = Color(0xFFD9EDE7), onPrimaryContainer = Color(0xFF123F39),
+    secondary = Color(0xFF5F666E), secondaryContainer = Color(0xFFE5E9ED), onSecondaryContainer = Color(0xFF29343C),
+    tertiary = Color(0xFF74608A), tertiaryContainer = Color(0xFFECE3F4), onTertiaryContainer = Color(0xFF352542),
+    background = Color(0xFFF4F6F5), surface = Color(0xFFFFFFFF), surfaceVariant = Color(0xFFEBEFED),
+    surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFF8FAF9),
+    surfaceContainer = Color(0xFFF0F3F1), surfaceContainerHigh = Color(0xFFE9EEEB), surfaceContainerHighest = Color(0xFFE1E8E4),
+    onSurface = Color(0xFF202C28), onSurfaceVariant = Color(0xFF56635D),
+    outline = Color(0xFF79877F), outlineVariant = Color(0xFFD7DFDA), error = Color(0xFFAE3F42)
+)
+private val StudioDark = darkColorScheme(
+    primary = Color(0xFF9BD5C4), onPrimary = Color(0xFF103A31),
+    primaryContainer = Color(0xFF214D41), onPrimaryContainer = Color(0xFFBFECDC),
+    secondary = Color(0xFFC0CCD3), secondaryContainer = Color(0xFF35434C), onSecondaryContainer = Color(0xFFDFE8ED),
+    tertiary = Color(0xFFD6BCE9), tertiaryContainer = Color(0xFF4C3D5A), onTertiaryContainer = Color(0xFFF1DAFF),
+    background = Color(0xFF101715), surface = Color(0xFF1A2420), surfaceVariant = Color(0xFF2F3C35),
+    surfaceContainerLowest = Color(0xFF0B120F), surfaceContainerLow = Color(0xFF18201C),
+    surfaceContainer = Color(0xFF1E2923), surfaceContainerHigh = Color(0xFF26322B), surfaceContainerHighest = Color(0xFF303D35),
+    onSurface = Color(0xFFE6EEE8), onSurfaceVariant = Color(0xFFB9C8BF),
+    outline = Color(0xFF86998D), outlineVariant = Color(0xFF3C4B42), error = Color(0xFFFFB3B4)
+)
+
 private fun ColorScheme.toAmoled(): ColorScheme {
     return this.copy(
         background = Color.Black,
@@ -321,14 +348,20 @@ fun MyApplicationTheme(
             AppThemePalette.NORDIC_TEAL -> if (isDark) NordicTealDark else NordicTealLight
             AppThemePalette.CRIMSON -> if (isDark) CrimsonDark else CrimsonLight
             AppThemePalette.SLATE -> if (isDark) SlateDark else SlateLight
+            AppThemePalette.STUDIO -> if (isDark) StudioDark else StudioLight
         }
     }
 
     val finalScheme = if (isAmoled) baseScheme.toAmoled() else baseScheme
 
-    MaterialTheme(
+    val financialColors = if (palette == AppThemePalette.STUDIO) {
+        if (isDark) FinancialColorSet(Color(0xFF8BD5AF), Color(0xFFFFB3B4), Color(0xFF9DCDE5), finalScheme.primary, Color(0xFFE6C183), true)
+        else FinancialColorSet(Color(0xFF276749), Color(0xFFAE3F42), Color(0xFF356581), finalScheme.primary, Color(0xFF825D1C), true)
+    } else FinancialColorSet(IncomeGreen, ExpenseRed, TransferTeal)
+    CompositionLocalProvider(LocalFinancialColors provides financialColors) { MaterialTheme(
         colorScheme = finalScheme,
         typography = Typography,
+        shapes = Shapes(small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(20.dp), extraLarge = RoundedCornerShape(24.dp)),
         content = content
-    )
+    ) }
 }

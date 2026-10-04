@@ -1,4 +1,6 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.example.ui.components
+import com.example.ui.theme.FinancialColors
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -46,8 +48,6 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.text.style.TextOverflow
 import com.example.data.model.*
 import com.example.domain.CurrencyFormatter
-import com.example.ui.theme.ExpenseRed
-import com.example.ui.theme.IncomeGreen
 import kotlin.math.*
 
 @Composable
@@ -148,7 +148,7 @@ fun DonutPieChart(
                     )
                     Text(
                         text = CurrencyFormatter.formatAmount(selectedItem.totalAmount, currencyCode),
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = palette.getOrElse(selectedIndex ?: 0) { MaterialTheme.colorScheme.primary }
                     )
                     Text(
@@ -164,7 +164,7 @@ fun DonutPieChart(
                     )
                     Text(
                         text = CurrencyFormatter.formatAmount(totalAmount, currencyCode),
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
@@ -207,9 +207,11 @@ fun DonutPieChart(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = item.category.name,
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium),
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
@@ -228,7 +230,7 @@ fun DonutPieChart(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "${String.format("%.1f", item.percentage)}%",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
                             color = color,
                             modifier = Modifier.width(44.dp)
                         )
@@ -269,17 +271,17 @@ fun MonthlyBarChart(
             ) {
                 Text(
                     text = "Cash Flow Trend",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(IncomeGreen))
+                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(FinancialColors.income))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Income", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(ExpenseRed))
+                        Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(FinancialColors.expense))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Expense", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -317,7 +319,7 @@ fun MonthlyBarChart(
                                     .width(14.dp)
                                     .fillMaxHeight(incHeightFraction)
                                     .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                    .background(IncomeGreen)
+                                    .background(FinancialColors.income)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             // Expense Bar
@@ -326,7 +328,7 @@ fun MonthlyBarChart(
                                     .width(14.dp)
                                     .fillMaxHeight(expHeightFraction)
                                     .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                    .background(ExpenseRed)
+                                    .background(FinancialColors.expense)
                             )
                         }
 
@@ -353,11 +355,14 @@ enum class TrendChartMode {
 fun DailySpendingTrendChart(
     data: DailySpendingTrendData,
     currencyCode: String = "INR",
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showDaily: Boolean = true,
+    showCumulative: Boolean = true
 ) {
-    if (data.days.isEmpty()) return
+    if (data.days.isEmpty() || (!showDaily && !showCumulative)) return
 
-    var chartMode by rememberSaveable { mutableStateOf(TrendChartMode.DAILY_BARS) }
+    var requestedMode by rememberSaveable { mutableStateOf(TrendChartMode.DAILY_BARS) }
+    val chartMode = if (!showDaily) TrendChartMode.CUMULATIVE_PACE else if (!showCumulative) TrendChartMode.DAILY_BARS else requestedMode
     var selectedPointIndex by remember { mutableStateOf<Int?>(null) }
     val animatedProgress = remember { Animatable(1f) }
 
@@ -392,10 +397,10 @@ fun DailySpendingTrendChart(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(Modifier.weight(1f)) {
                     Text(
                         text = "Spending Velocity & Trend",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
@@ -409,15 +414,15 @@ fun DailySpendingTrendChart(
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(surfaceVariantColor.copy(alpha = 0.5f))
+                        .background(surfaceVariantColor.copy(alpha = 0.35f))
                         .padding(2.dp)
                 ) {
-                    Box(
+                    if (showDaily) Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(if (chartMode == TrendChartMode.DAILY_BARS) primaryColor else Color.Transparent)
                             .clickable {
-                                chartMode = TrendChartMode.DAILY_BARS
+                                requestedMode = TrendChartMode.DAILY_BARS
                                 selectedPointIndex = null
                             }
                             .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -425,15 +430,15 @@ fun DailySpendingTrendChart(
                         Text(
                             text = "Daily",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (chartMode == TrendChartMode.DAILY_BARS) Color.White else onSurfaceVariantColor
+                            color = if (chartMode == TrendChartMode.DAILY_BARS) MaterialTheme.colorScheme.onPrimary else onSurfaceVariantColor
                         )
                     }
-                    Box(
+                    if (showCumulative) Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .background(if (chartMode == TrendChartMode.CUMULATIVE_PACE) primaryColor else Color.Transparent)
                             .clickable {
-                                chartMode = TrendChartMode.CUMULATIVE_PACE
+                                requestedMode = TrendChartMode.CUMULATIVE_PACE
                                 selectedPointIndex = null
                             }
                             .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -441,7 +446,7 @@ fun DailySpendingTrendChart(
                         Text(
                             text = "Pace",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (chartMode == TrendChartMode.CUMULATIVE_PACE) Color.White else onSurfaceVariantColor
+                            color = if (chartMode == TrendChartMode.CUMULATIVE_PACE) MaterialTheme.colorScheme.onPrimary else onSurfaceVariantColor
                         )
                     }
                 }
@@ -469,7 +474,7 @@ fun DailySpendingTrendChart(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "Day ${selectedPoint.dayOfMonth}",
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
                             )
                             if (selectedPoint.isSpike) {
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -479,7 +484,7 @@ fun DailySpendingTrendChart(
                                 ) {
                                     Text(
                                         text = "Spike",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                                         color = spikeColor,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
@@ -489,7 +494,7 @@ fun DailySpendingTrendChart(
                         Column(horizontalAlignment = Alignment.End) {
                             Text(
                                 text = CurrencyFormatter.formatAmount(selectedPoint.totalExpense, currencyCode),
-                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                 color = if (selectedPoint.isSpike) spikeColor else primaryColor
                             )
                             Text(
@@ -503,12 +508,12 @@ fun DailySpendingTrendChart(
             }
 
             // Legend Row
-            Row(
+            FlowRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 6.dp),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 if (chartMode == TrendChartMode.DAILY_BARS) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -543,6 +548,10 @@ fun DailySpendingTrendChart(
                 }
             }
 
+            Text(
+                "Scale: ${CurrencyFormatter.formatAmount(if (chartMode == TrendChartMode.DAILY_BARS) maxDailyExpense else maxCumulativeExpense, currencyCode)}",
+                style = MaterialTheme.typography.bodySmall, color = onSurfaceVariantColor
+            )
             // Canvas Chart Area
             Box(
                 modifier = Modifier
@@ -574,13 +583,13 @@ fun DailySpendingTrendChart(
                     // Draw 2 horizontal guidelines
                     val halfH = h * 0.5f
                     drawLine(
-                        color = surfaceVariantColor.copy(alpha = 0.5f),
+                        color = surfaceVariantColor.copy(alpha = 0.35f),
                         start = Offset(0f, halfH),
                         end = Offset(w, halfH),
                         strokeWidth = 1.dp.toPx()
                     )
                     drawLine(
-                        color = surfaceVariantColor.copy(alpha = 0.5f),
+                        color = surfaceVariantColor.copy(alpha = 0.35f),
                         start = Offset(0f, h),
                         end = Offset(w, h),
                         strokeWidth = 1.dp.toPx()
@@ -712,7 +721,7 @@ fun DailySpendingTrendChart(
                     for (d in labelDays) {
                         Text(
                             text = "$d",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                             color = onSurfaceVariantColor
                         )
                     }
@@ -736,7 +745,7 @@ fun DailySpendingTrendChart(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             CurrencyFormatter.formatAmount(data.averageDailyExpense, currencyCode, showDecimals = false),
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -752,7 +761,7 @@ fun DailySpendingTrendChart(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             "Day ${data.peakDay}",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                             color = spikeColor
                         )
                     }
@@ -768,7 +777,7 @@ fun DailySpendingTrendChart(
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             "${data.activeDaysCount}/${data.days.size}d",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                     }
@@ -806,7 +815,7 @@ fun RankedCategoryBarChart(
             ) {
                 Text(
                     text = "Category Spend Ranking",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
@@ -865,7 +874,7 @@ fun RankedCategoryBarChart(
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
                                     text = CurrencyFormatter.formatAmount(item.totalAmount, currencyCode),
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
@@ -961,7 +970,7 @@ fun MonthOverMonthCategoryBarChart(
             ) {
                 Text(
                     text = "Category Shift (vs Last Month)",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1011,8 +1020,8 @@ fun MonthOverMonthCategoryBarChart(
                                 shape = RoundedCornerShape(6.dp),
                                 color = when {
                                     item.previousMonthAmount == 0L -> MaterialTheme.colorScheme.surfaceVariant
-                                    item.isIncrease -> ExpenseRed.copy(alpha = 0.14f)
-                                    else -> IncomeGreen.copy(alpha = 0.14f)
+                                    item.isIncrease -> FinancialColors.expense.copy(alpha = 0.14f)
+                                    else -> FinancialColors.income.copy(alpha = 0.14f)
                                 }
                             ) {
                                 val deltaText = when {
@@ -1022,12 +1031,12 @@ fun MonthOverMonthCategoryBarChart(
                                 }
                                 val textColor = when {
                                     item.previousMonthAmount == 0L -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    item.isIncrease -> ExpenseRed
-                                    else -> IncomeGreen
+                                    item.isIncrease -> FinancialColors.expense
+                                    else -> FinancialColors.income
                                 }
                                 Text(
                                     text = deltaText,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                                     color = textColor,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
@@ -1131,7 +1140,7 @@ fun DayOfWeekHabitsChart(
                 Column {
                     Text(
                         text = "Day-of-Week Spending Habits",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
@@ -1148,7 +1157,7 @@ fun DayOfWeekHabitsChart(
                     ) {
                         Text(
                             text = "Peak: ${peakDay.dayName}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
@@ -1176,7 +1185,7 @@ fun DayOfWeekHabitsChart(
                     ) {
                         Text(
                             text = "${String.format("%.0f", day.percentage)}%",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                             color = if (day.isPeakDay) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
@@ -1202,7 +1211,7 @@ fun DayOfWeekHabitsChart(
                         Text(
                             text = day.dayName,
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontWeight = if (day.isPeakDay) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (day.isPeakDay) FontWeight.SemiBold else FontWeight.Normal
                             ),
                             color = if (day.isPeakDay) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )

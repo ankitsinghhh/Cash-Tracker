@@ -70,6 +70,7 @@ fun HomeScreen(
     val monthlyGroups by (if (homeSubTab == HomeSubTab.MONTHLY) viewModel.monthlyHistoricalGroups else kotlinx.coroutines.flow.flowOf(emptyList<MonthlyAggregation>())).collectAsStateWithLifecycle(emptyList<MonthlyAggregation>())
     val accountBalances by (if (homeSubTab == HomeSubTab.TOTAL_SUMMARY) viewModel.accountBalances else kotlinx.coroutines.flow.flowOf(emptyList<AccountWithBalance>())).collectAsStateWithLifecycle(emptyList<AccountWithBalance>())
     val currencyCode by viewModel.primaryCurrency.collectAsStateWithLifecycle()
+    val calendarHeatmap by viewModel.calendarHeatmap.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedTransactionIds.collectAsStateWithLifecycle()
     val filterState by viewModel.filterState.collectAsStateWithLifecycle()
 
@@ -242,9 +243,9 @@ fun HomeScreen(
                                     )
                                     HorizontalDivider()
                                     DropdownMenuItem(
-                                        text = { Text("Delete", color = ExpenseRed) },
+                                        text = { Text("Delete", color = FinancialColors.expense) },
                                         leadingIcon = {
-                                            Icon(Icons.Default.Delete, contentDescription = null, tint = ExpenseRed)
+                                            Icon(Icons.Default.Delete, contentDescription = null, tint = FinancialColors.expense)
                                         },
                                         onClick = {
                                             showSelectionOverflowMenu = false
@@ -513,6 +514,7 @@ fun HomeScreen(
                                         currentMonthCal = pageData.monthCal,
                                         currentMonthTransactions = pageData.transactions,
                                         currencyCode = currencyCode,
+                                        heatmapEnabled = calendarHeatmap,
                                         onTransactionClick = { onNavigateToEditTransaction(it.transaction.id) },
                                         onAddTransaction = onNavigateToAddTransaction,
                                         onAddMemo = { dateStr ->
@@ -581,7 +583,7 @@ fun HomeScreen(
                         viewModel.deleteSelectedTransactions()
                         showDeleteConfirmDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = ExpenseRed)
+                    colors = ButtonDefaults.buttonColors(containerColor = FinancialColors.expense)
                 ) {
                     Text("Delete All")
                 }
@@ -676,7 +678,7 @@ fun HomeScreen(
                                 Text(
                                     if (cat.type == TransactionType.EXPENSE) "Expense" else "Income",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = if (cat.type == TransactionType.EXPENSE) ExpenseRed else IncomeGreen
+                                    color = if (cat.type == TransactionType.EXPENSE) FinancialColors.expense else FinancialColors.income
                                 )
                             }
                         }
@@ -823,8 +825,8 @@ fun DailyTabContent(
                             }
                             val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
                             val chipColor = when (dayOfWeek) {
-                                Calendar.SUNDAY -> ExpenseRed.copy(alpha = 0.85f)
-                                Calendar.SATURDAY -> TransferTeal.copy(alpha = 0.85f)
+                                Calendar.SUNDAY -> FinancialColors.expense.copy(alpha = 0.85f)
+                                Calendar.SATURDAY -> FinancialColors.transfer.copy(alpha = 0.85f)
                                 else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
                             }
                             val chipTextColor = when (dayOfWeek) {
@@ -890,7 +892,7 @@ fun DailyTabContent(
                                             fontWeight = FontWeight.Medium,
                                             fontSize = 13.sp
                                         ),
-                                        color = IncomeGreen
+                                        color = FinancialColors.income
                                     )
                                 }
                                 if (group.totalExpense > 0) {
@@ -900,7 +902,7 @@ fun DailyTabContent(
                                             fontWeight = FontWeight.Medium,
                                             fontSize = 13.sp
                                         ),
-                                        color = ExpenseRed
+                                        color = FinancialColors.expense
                                     )
                                 }
                             }
@@ -967,7 +969,8 @@ fun CalendarTabContent(
     currencyCode: String,
     onTransactionClick: (TransactionWithDetails) -> Unit,
     onAddTransaction: () -> Unit,
-    onAddMemo: (String) -> Unit
+    onAddMemo: (String) -> Unit,
+    heatmapEnabled: Boolean = false
 ) {
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
     val todayDateStr = remember { dateFormat.format(Calendar.getInstance().time) }
@@ -989,6 +992,18 @@ fun CalendarTabContent(
     val transactionsByDate = remember(currentMonthTransactions) {
         currentMonthTransactions.groupBy { dateFormat.format(Date(it.transaction.dateMillis)) }
     }
+    val heatmapAmounts = remember(transactionsByDate, currencyCode, heatmapEnabled) {
+        if (!heatmapEnabled) emptyMap() else transactionsByDate.mapValues { (_, records) ->
+            records.filter { !it.transaction.isExcludedFromStats && it.account?.currency == currencyCode }.sumOf {
+                when (it.transaction.type) {
+                    TransactionType.EXPENSE -> it.transaction.amount
+                    TransactionType.TRANSFER -> it.transaction.transferFee
+                    else -> 0L
+                }
+            }
+        }
+    }
+    val heatmapMaximum = heatmapAmounts.values.maxOrNull()?.coerceAtLeast(1L) ?: 1L
 
     // Build calendar grid cells
     val cal = currentMonthCal.clone() as Calendar
@@ -1120,6 +1135,10 @@ fun CalendarTabContent(
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        if (heatmapEnabled) item {
+            Text("Spending heatmap · $currencyCode · darker cells mean more spending", modifier = Modifier.padding(8.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1146,8 +1165,8 @@ fun CalendarTabContent(
                                 text = day,
                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                 color = when (index) {
-                                    0 -> ExpenseRed
-                                    6 -> TransferTeal
+                                    0 -> FinancialColors.expense
+                                    6 -> FinancialColors.transfer
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 },
                                 modifier = Modifier.weight(1f),
@@ -1178,6 +1197,8 @@ fun CalendarTabContent(
                                             .background(
                                                 if (cellData.isSelected) {
                                                     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                                                } else if (heatmapEnabled && cellData.isCurrentMonth && (heatmapAmounts[cellData.dateString] ?: 0L) > 0L) {
+                                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.06f + 0.22f * ((heatmapAmounts[cellData.dateString] ?: 0L).toFloat() / heatmapMaximum))
                                                 } else {
                                                     Color.Transparent
                                                 }
@@ -1235,8 +1256,8 @@ fun CalendarTabContent(
                                                     ),
                                                     color = when {
                                                         !cellData.isCurrentMonth -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.32f)
-                                                        cellData.dayOfWeek == 0 -> ExpenseRed
-                                                        cellData.dayOfWeek == 6 -> TransferTeal
+                                                        cellData.dayOfWeek == 0 -> FinancialColors.expense
+                                                        cellData.dayOfWeek == 6 -> FinancialColors.transfer
                                                         else -> MaterialTheme.colorScheme.onSurface
                                                     }
                                                 )
@@ -1254,7 +1275,7 @@ fun CalendarTabContent(
                                                             fontSize = 8.5.sp,
                                                             fontWeight = FontWeight.SemiBold
                                                         ),
-                                                        color = IncomeGreen,
+                                                        color = FinancialColors.income,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis
                                                     )
@@ -1266,7 +1287,7 @@ fun CalendarTabContent(
                                                             fontSize = 8.5.sp,
                                                             fontWeight = FontWeight.SemiBold
                                                         ),
-                                                        color = ExpenseRed,
+                                                        color = FinancialColors.expense,
                                                         maxLines = 1,
                                                         overflow = TextOverflow.Ellipsis
                                                     )
@@ -1322,14 +1343,14 @@ fun CalendarTabContent(
                                     Text(
                                         text = "+${CurrencyFormatter.formatAmount(selectedDayIncome, currencyCode, showDecimals = false)}",
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = IncomeGreen
+                                        color = FinancialColors.income
                                     )
                                 }
                                 if (selectedDayExpense > 0) {
                                     Text(
                                         text = "-${CurrencyFormatter.formatAmount(selectedDayExpense, currencyCode, showDecimals = false)}",
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                        color = ExpenseRed
+                                        color = FinancialColors.expense
                                     )
                                 }
                                 if (selectedDayIncome == 0L && selectedDayExpense == 0L) {
@@ -1492,11 +1513,11 @@ fun WeeklyTabContent(
                                     Text(
                                         text = "Net: ${CurrencyFormatter.formatAmount(week.balance, currencyCode)}",
                                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                        color = if (week.balance >= 0) IncomeGreen else ExpenseRed
+                                        color = if (week.balance >= 0) FinancialColors.income else FinancialColors.expense
                                     )
                                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("+${CurrencyFormatter.formatAmount(week.totalIncome, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = IncomeGreen)
-                                        Text("-${CurrencyFormatter.formatAmount(week.totalExpense, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = ExpenseRed)
+                                        Text("+${CurrencyFormatter.formatAmount(week.totalIncome, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = FinancialColors.income)
+                                        Text("-${CurrencyFormatter.formatAmount(week.totalExpense, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = FinancialColors.expense)
                                     }
                                 }
                                 Spacer(modifier = Modifier.width(6.dp))
@@ -1581,11 +1602,11 @@ fun MonthlyTabContent(
                         Text(
                             text = CurrencyFormatter.formatAmount(month.balance, currencyCode),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                            color = if (month.balance >= 0) IncomeGreen else ExpenseRed
+                            color = if (month.balance >= 0) FinancialColors.income else FinancialColors.expense
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("+${CurrencyFormatter.formatAmount(month.totalIncome, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = IncomeGreen)
-                            Text("-${CurrencyFormatter.formatAmount(month.totalExpense, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = ExpenseRed)
+                            Text("+${CurrencyFormatter.formatAmount(month.totalIncome, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = FinancialColors.income)
+                            Text("-${CurrencyFormatter.formatAmount(month.totalExpense, currencyCode, showDecimals = false)}", style = MaterialTheme.typography.labelSmall, color = FinancialColors.expense)
                         }
                     }
                 }
@@ -1623,7 +1644,7 @@ fun SummaryTabContent(
                     Text(
                         text = CurrencyFormatter.formatAmount(periodSummary.netSavings, currencyCode),
                         style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (periodSummary.netSavings >= 0) MaterialTheme.colorScheme.onPrimaryContainer else ExpenseRed
+                        color = if (periodSummary.netSavings >= 0) MaterialTheme.colorScheme.onPrimaryContainer else FinancialColors.expense
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Row(
@@ -1707,7 +1728,7 @@ fun SummaryTabContent(
                     Text(
                         text = CurrencyFormatter.formatAmount(acc.calculatedBalance, currencyCode),
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = if (FinancialEngine.isLiabilityAccount(acc.account.type)) ExpenseRed else MaterialTheme.colorScheme.onSurface
+                        color = if (FinancialEngine.isLiabilityAccount(acc.account.type)) FinancialColors.expense else MaterialTheme.colorScheme.onSurface
                     )
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))

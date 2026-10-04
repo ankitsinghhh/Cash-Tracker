@@ -1,4 +1,5 @@
 package com.example.ui.screens.security
+import com.example.ui.theme.FinancialColors
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -28,7 +29,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.ExpenseRed
 
 @Composable
 fun PinLockScreen(
@@ -135,7 +135,7 @@ fun PinLockScreen(
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontWeight = if (showError) FontWeight.SemiBold else FontWeight.Normal
                 ),
-                color = if (showError) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant
+                color = if (showError) FinancialColors.expense else MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(36.dp))
@@ -150,7 +150,7 @@ fun PinLockScreen(
                     val filled = i < enteredPin.length
                     val dotColor by animateColorAsState(
                         targetValue = when {
-                            showError -> ExpenseRed
+                            showError -> FinancialColors.expense
                             filled -> MaterialTheme.colorScheme.primary
                             else -> MaterialTheme.colorScheme.surfaceVariant
                         },

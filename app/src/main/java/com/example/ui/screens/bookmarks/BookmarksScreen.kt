@@ -1,4 +1,5 @@
 package com.example.ui.screens.bookmarks
+import com.example.ui.theme.FinancialColors
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -23,8 +24,6 @@ import com.example.domain.CurrencyFormatter
 import com.example.ui.MainViewModel
 import com.example.ui.components.LoadingContent
 import com.example.ui.components.EmptyStateView
-import com.example.ui.theme.ExpenseRed
-import com.example.ui.theme.IncomeGreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,7 +105,7 @@ fun BookmarksScreen(
                                 Text(
                                     text = CurrencyFormatter.formatAmount(bm.amount, currencyCode),
                                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = if (bm.type == TransactionType.EXPENSE) ExpenseRed else IncomeGreen
+                                    color = if (bm.type == TransactionType.EXPENSE) FinancialColors.expense else FinancialColors.income
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 IconButton(onClick = { viewModel.deleteBookmark(bm) }) {
